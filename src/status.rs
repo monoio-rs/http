@@ -44,7 +44,7 @@ use std::str::FromStr;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StatusCode(NonZeroU16);
 
-/// A possible error value when converting a `StatusCode` from a `u16` or `&str`
+/// A possible error value when converting a `StatusCode` from a `u16` or `&str`.
 ///
 /// This error indicates that the supplied input was not a valid number, was less
 /// than 100, or was greater than 999.
@@ -80,7 +80,7 @@ impl StatusCode {
             .ok_or_else(InvalidStatusCode::new)
     }
 
-    /// Converts a &[u8] to a status code
+    /// Converts a `&[u8]` to a status code.
     pub fn from_bytes(src: &[u8]) -> Result<StatusCode, InvalidStatusCode> {
         if src.len() != 3 {
             return Err(InvalidStatusCode::new());
@@ -116,8 +116,8 @@ impl StatusCode {
     /// assert_eq!(status.as_u16(), 200);
     /// ```
     #[inline]
-    pub fn as_u16(&self) -> u16 {
-        (*self).into()
+    pub const fn as_u16(&self) -> u16 {
+        self.0.get()
     }
 
     /// Returns a &str representation of the `StatusCode`
@@ -175,31 +175,31 @@ impl StatusCode {
     /// Check if status is within 100-199.
     #[inline]
     pub fn is_informational(&self) -> bool {
-        200 > self.0.get() && self.0.get() >= 100
+        (100..200).contains(&self.0.get())
     }
 
     /// Check if status is within 200-299.
     #[inline]
     pub fn is_success(&self) -> bool {
-        300 > self.0.get() && self.0.get() >= 200
+        (200..300).contains(&self.0.get())
     }
 
     /// Check if status is within 300-399.
     #[inline]
     pub fn is_redirection(&self) -> bool {
-        400 > self.0.get() && self.0.get() >= 300
+        (300..400).contains(&self.0.get())
     }
 
     /// Check if status is within 400-499.
     #[inline]
     pub fn is_client_error(&self) -> bool {
-        500 > self.0.get() && self.0.get() >= 400
+        (400..500).contains(&self.0.get())
     }
 
     /// Check if status is within 500-599.
     #[inline]
     pub fn is_server_error(&self) -> bool {
-        600 > self.0.get() && self.0.get() >= 500
+        (500..600).contains(&self.0.get())
     }
 }
 
@@ -462,6 +462,10 @@ status_codes! {
     /// 424 Failed Dependency
     /// [[RFC4918, Section 11.4](https://tools.ietf.org/html/rfc4918#section-11.4)]
     (424, FAILED_DEPENDENCY, "Failed Dependency");
+
+    /// 425 Too early
+    /// [[RFC8470, Section 5.2](https://httpwg.org/specs/rfc8470.html#status)]
+    (425, TOO_EARLY, "Too Early");
 
     /// 426 Upgrade Required
     /// [[RFC9110, Section 15.5.22](https://datatracker.ietf.org/doc/html/rfc9110#section-15.5.22)]
