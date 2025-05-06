@@ -1,3 +1,10 @@
+pub use self::as_header_name::AsHeaderName;
+pub use self::into_header_name::IntoHeaderName;
+use super::name::{HdrName, HeaderName, InvalidHeaderName};
+use super::HeaderValue;
+#[cfg(feature = "fasthttp")]
+use crate::ext::fasthttp::header_name::normalize_header_key2;
+use crate::Error;
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -5,14 +12,6 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::iter::{FromIterator, FusedIterator};
 use std::marker::PhantomData;
 use std::{fmt, mem, ops, ptr, vec};
-
-use crate::Error;
-
-use super::name::{HdrName, HeaderName, InvalidHeaderName};
-use super::HeaderValue;
-
-pub use self::as_header_name::AsHeaderName;
-pub use self::into_header_name::IntoHeaderName;
 
 /// A set of HTTP headers
 ///
@@ -49,6 +48,17 @@ pub struct HeaderMap<T = HeaderValue> {
     entries: Vec<Bucket<T>>,
     extra_values: Vec<ExtraValue<T>>,
     danger: Danger,
+
+    #[cfg(feature = "fasthttp")]
+    keys: HashMap<HeaderName, HeaderName>, // normalized_key -> original_key
+}
+
+#[cfg(feature = "fasthttp")]
+pub fn normalize_key<K>(key: &K) -> impl Into<HeaderName>
+where
+    K: Into<HeaderName> + Clone,
+{
+    unsafe { normalize_header_key2(key) }
 }
 
 // # Implementation notes
@@ -507,6 +517,8 @@ impl<T> HeaderMap<T> {
                 entries: Vec::new(),
                 extra_values: Vec::new(),
                 danger: Danger::Green,
+                #[cfg(feature = "fasthttp")]
+                keys: HashMap::new(),
             })
         } else {
             let raw_cap = match to_raw_capacity(capacity).checked_next_power_of_two() {
@@ -524,6 +536,8 @@ impl<T> HeaderMap<T> {
                 entries: Vec::with_capacity(raw_cap),
                 extra_values: Vec::new(),
                 danger: Danger::Green,
+                #[cfg(feature = "fasthttp")]
+                keys: HashMap::new(),
             })
         }
     }
@@ -621,6 +635,8 @@ impl<T> HeaderMap<T> {
         self.entries.clear();
         self.extra_values.clear();
         self.danger = Danger::Green;
+        #[cfg(feature = "fasthttp")]
+        self.keys.clear();
 
         for e in self.indices.iter_mut() {
             *e = Pos::none();
@@ -1269,6 +1285,17 @@ impl<T> HeaderMap<T> {
     }
 
     #[inline]
+    #[cfg(feature = "fasthttp")]
+    fn update_key_map(&mut self, key: &HeaderName) {
+        let normalized_key = normalize_key(key).into();
+        if let Some(original_key) = self.keys.get(&normalized_key) {
+            self.remove(original_key.clone());
+        }
+
+        self.keys.insert(normalized_key, key.clone());
+    }
+
+    #[inline]
     fn try_insert2<K>(&mut self, key: K, value: T) -> Result<Option<T>, MaxSizeReached>
     where
         K: Hash + Into<HeaderName>,
@@ -1286,8 +1313,8 @@ impl<T> HeaderMap<T> {
             // Vacant
             {
                 let _ = danger; // Make lint happy
-                let index = self.entries.len();
                 self.try_insert_entry(hash, key.into(), value)?;
+                let index = self.entries.len() - 1;
                 self.indices[probe] = Pos::new(index, hash);
                 None
             },
@@ -1451,13 +1478,33 @@ impl<T> HeaderMap<T> {
     #[inline]
     fn find<K>(&self, key: &K) -> Option<(usize, usize)>
     where
-        K: Hash + Into<HeaderName> + ?Sized,
+        K: Hash + Into<HeaderName> + Clone,
         HeaderName: PartialEq<K>,
     {
         if self.entries.is_empty() {
             return None;
         }
 
+        self.find2(key).or({
+            #[cfg(feature = "fasthttp")]
+            {
+                match self.keys.get(&normalize_key(key).into()) {
+                    Some(original_key) => self.find2::<HeaderName>(original_key),
+                    None => None,
+                }
+            }
+
+            #[cfg(not(feature = "fasthttp"))]
+            None
+        })
+    }
+
+    #[inline]
+    fn find2<K>(&self, key: &K) -> Option<(usize, usize)>
+    where
+        K: Hash + Into<HeaderName>,
+        HeaderName: PartialEq<K>,
+    {
         let hash = hash_elem_using(&self.danger, key);
         let mask = self.mask;
         let mut probe = desired_pos(mask, hash);
@@ -1489,6 +1536,8 @@ impl<T> HeaderMap<T> {
         probe: usize,
         danger: bool,
     ) -> Result<usize, MaxSizeReached> {
+        #[cfg(feature = "fasthttp")]
+        self.update_key_map(&key);
         // Push the value and get the index
         let index = self.entries.len();
         self.try_insert_entry(hash, key, value)?;
@@ -1628,6 +1677,9 @@ impl<T> HeaderMap<T> {
         key: HeaderName,
         value: T,
     ) -> Result<(), MaxSizeReached> {
+        #[cfg(feature = "fasthttp")]
+        self.update_key_map(&key);
+
         if self.entries.len() >= MAX_SIZE {
             return Err(MaxSizeReached::new());
         }
@@ -3687,7 +3739,7 @@ mod into_header_name {
 
     impl IntoHeaderName for HeaderName {}
 
-    impl<'a> Sealed for &'a HeaderName {
+    impl Sealed for &HeaderName {
         #[inline]
         fn try_insert<T>(
             self,
@@ -3707,7 +3759,7 @@ mod into_header_name {
         }
     }
 
-    impl<'a> IntoHeaderName for &'a HeaderName {}
+    impl IntoHeaderName for &HeaderName {}
 
     impl Sealed for &'static str {
         #[inline]
@@ -3791,13 +3843,13 @@ mod as_header_name {
         }
 
         fn as_str(&self) -> &str {
-            <HeaderName>::as_str(self)
+            <HeaderName>::as_raw_str(self)
         }
     }
 
     impl AsHeaderName for HeaderName {}
 
-    impl<'a> Sealed for &'a HeaderName {
+    impl Sealed for &HeaderName {
         #[inline]
         fn try_entry<T>(self, map: &mut HeaderMap<T>) -> Result<Entry<'_, T>, TryEntryError> {
             Ok(map.try_entry2(self)?)
@@ -3809,13 +3861,13 @@ mod as_header_name {
         }
 
         fn as_str(&self) -> &str {
-            <HeaderName>::as_str(self)
+            <HeaderName>::as_raw_str(self)
         }
     }
 
-    impl<'a> AsHeaderName for &'a HeaderName {}
+    impl AsHeaderName for &HeaderName {}
 
-    impl<'a> Sealed for &'a str {
+    impl Sealed for &str {
         #[inline]
         fn try_entry<T>(self, map: &mut HeaderMap<T>) -> Result<Entry<'_, T>, TryEntryError> {
             Ok(HdrName::from_bytes(self.as_bytes(), move |hdr| {
@@ -3833,7 +3885,7 @@ mod as_header_name {
         }
     }
 
-    impl<'a> AsHeaderName for &'a str {}
+    impl AsHeaderName for &str {}
 
     impl Sealed for String {
         #[inline]
@@ -3853,7 +3905,7 @@ mod as_header_name {
 
     impl AsHeaderName for String {}
 
-    impl<'a> Sealed for &'a String {
+    impl Sealed for &String {
         #[inline]
         fn try_entry<T>(self, map: &mut HeaderMap<T>) -> Result<Entry<'_, T>, TryEntryError> {
             self.as_str().try_entry(map)
@@ -3869,7 +3921,7 @@ mod as_header_name {
         }
     }
 
-    impl<'a> AsHeaderName for &'a String {}
+    impl AsHeaderName for &String {}
 }
 
 #[test]

@@ -37,7 +37,7 @@ pub struct HeaderName {
 }
 
 // Almost a full `HeaderName`
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HdrName<'a> {
     inner: Repr<MaybeLower<'a>>,
     original: Option<&'a [u8]>,
@@ -46,7 +46,7 @@ pub struct HdrName<'a> {
 impl<'a> Hash for HdrName<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         #[cfg(feature = "double-write")]
-        if let Some(original)= self.original{
+        if let Some(original) = self.original {
             original.hash(state);
             return;
         }
@@ -87,26 +87,21 @@ impl<T: Hash> Hash for Repr<T> {
 impl<T: Hash> Hash for Repr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Repr::Standard(inner, src) => {
-                match src {
-                    Some(src) => src.hash(state),
-                    None => {
-                        inner.hash(state);
-                    }
+            Repr::Standard(inner, src) => match src {
+                Some(src) => src.hash(state),
+                None => {
+                    inner.hash(state);
                 }
-            }
-            Repr::Custom(inner, src) => {
-                match src {
-                    Some(src) => src.hash(state),
-                    None => {
-                        inner.hash(state);
-                    }
+            },
+            Repr::Custom(inner, src) => match src {
+                Some(src) => src.hash(state),
+                None => {
+                    inner.hash(state);
                 }
             },
         }
     }
 }
-
 
 // Used to hijack the Hash impl
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1580,7 +1575,7 @@ impl<'a> PartialEq<&'a HeaderName> for HeaderName {
     }
 }
 
-impl<'a> PartialEq<HeaderName> for &'a HeaderName {
+impl PartialEq<HeaderName> for &HeaderName {
     #[inline]
     fn eq(&self, other: &HeaderName) -> bool {
         *other == *self
@@ -1634,7 +1629,7 @@ impl<'a> PartialEq<&'a str> for HeaderName {
     }
 }
 
-impl<'a> PartialEq<HeaderName> for &'a str {
+impl PartialEq<HeaderName> for &str {
     /// Performs a case-insensitive comparison of the string against the header
     /// name
     #[inline]
@@ -1837,6 +1832,7 @@ unsafe fn slice_assume_init<T>(slice: &[MaybeUninit<T>]) -> &[T] {
 mod tests {
     use self::StandardHeader::Vary;
     use super::*;
+    use crate::HeaderMap;
 
     #[test]
     fn test_bounds() {
@@ -2122,5 +2118,64 @@ mod tests {
         HeaderName::from_lowercase(&[b'A'; 100]).unwrap_err();
         HeaderName::from_lowercase(&[0x1; 100]).unwrap_err();
         HeaderName::from_lowercase(&[0xFF; 100]).unwrap_err();
+    }
+
+    #[test]
+    fn test_insert() {
+        let mut header_map = HeaderMap::new();
+
+        header_map.insert("x-tt-agw-key1", "1".parse().unwrap());
+        assert_eq!(header_map.get("x-tt-agw-key1").unwrap(), "1");
+
+        header_map.insert("X-Tt-agw-key1", "2".parse().unwrap());
+        assert_eq!(header_map.get("X-Tt-agw-key1").unwrap(), "2");
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "fasthttp")]
+mod fasthttp_tests {
+    use crate::header::HeaderMap;
+    use crate::{HeaderName, HeaderValue};
+
+    #[test]
+    fn test_insert() {
+        let mut header_map = HeaderMap::new();
+
+        header_map.insert(
+            HeaderName::from_bytes("x-tt-agw-key1".as_bytes()).unwrap(),
+            HeaderValue::from_static("1"),
+        );
+        assert_eq!(header_map.get("x-tt-agw-key1").unwrap(), "1");
+        assert_eq!(header_map.get("X-Tt-Agw-Key1").unwrap(), "1");
+        assert_eq!(header_map.len(), 1);
+
+        header_map.insert(
+            HeaderName::from_bytes("X-Tt-agw-key1".as_bytes()).unwrap(),
+            HeaderValue::from_static("2"),
+        );
+        assert_eq!(header_map.get("X-Tt-agw-key1").unwrap(), "2");
+        assert_eq!(header_map.get("X-Tt-Agw-Key1").unwrap(), "2");
+        assert_eq!(header_map.len(), 1);
+
+        header_map.insert(
+            HeaderName::from_bytes("x-tt-agw-key2".as_bytes()).unwrap(),
+            HeaderValue::from_static("3"),
+        );
+        assert_eq!(header_map.len(), 2);
+
+        let mut iter = header_map.iter();
+
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("X-Tt-agw-key1", "2")
+        );
+
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("x-tt-agw-key2", "3")
+        );
     }
 }

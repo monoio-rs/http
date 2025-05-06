@@ -183,6 +183,7 @@ pub mod version;
 
 mod byte_str;
 mod error;
+mod ext;
 mod extensions;
 
 pub use crate::error::{Error, Result};

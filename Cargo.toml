@@ -36,11 +36,14 @@ exclude = [
 default = ["std"]
 std = []
 double-write = ["default"]
+fasthttp = ["default"] # 对齐老网关 fasthttp 行为
 
 [dependencies]
 bytes = "1"
 fnv = "1.0.5"
 itoa = "1"
+trie-rs = "0.4.2"
+lazy_static = "1.5"
 
 [dev-dependencies]
 quickcheck = "1"
