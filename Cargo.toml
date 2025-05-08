@@ -36,7 +36,7 @@ exclude = [
 default = ["std"]
 std = []
 double-write = ["default"]
-fasthttp = ["default"] # 对齐老网关 fasthttp 行为
+fasthttp = ["double-write"] # 对齐老网关 fasthttp 行为
 
 [dependencies]
 bytes = "1"

@@ -687,6 +687,8 @@ fn feature_double_write() {
         HeaderValue::from_static("Bar"),
     );
 
+    assert_eq!(headers.len(), 2);
+
     headers.append(
         HeaderName::from_bytes("foo1".as_bytes()).unwrap(),
         HeaderValue::from_static("baz1"),

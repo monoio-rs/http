@@ -1,3 +1,4 @@
+use crate::ext::fasthttp::consts::STANDARD_HEADERS;
 use crate::HeaderName;
 
 const TO_LOWER: u8 = b'a' - b'A';
@@ -28,7 +29,23 @@ lazy_static::lazy_static! {
     };
 }
 
-pub(crate) unsafe fn normalize_header_key2<K>(header_name: &K) -> impl Into<HeaderName>
+/// 只normalize标准header，其他自定义header保持原样透传
+pub(crate) fn normalize_header_key(
+    header_name: &HeaderName,
+    disable_normalizing: bool,
+) -> HeaderName {
+    if disable_normalizing {
+        return header_name.clone();
+    }
+
+    if !STANDARD_HEADERS.is_std_header(&(header_name.clone())) {
+        return header_name.clone();
+    }
+
+    normalize_header_key2(&header_name).into()
+}
+
+pub(crate) fn normalize_header_key2<K>(header_name: &K) -> impl Into<HeaderName>
 where
     K: Into<HeaderName> + Clone,
 {
@@ -40,46 +57,34 @@ where
         return header_name;
     }
 
-    let header_name_bytes = header_name_str.as_bytes_mut();
-    header_name_bytes[0] = TO_UPPER_TABLE[header_name_bytes[0] as usize];
-    let mut i = 1;
-    while i < n {
-        let p = &mut header_name_bytes[i];
-        if *p == b'-' {
-            i += 1;
-            if i < n {
-                header_name_bytes[i] = TO_UPPER_TABLE[header_name_bytes[i] as usize];
+    unsafe {
+        let header_name_bytes = header_name_str.as_bytes_mut();
+        header_name_bytes[0] = TO_UPPER_TABLE[header_name_bytes[0] as usize];
+        let mut i = 1;
+        while i < n {
+            let p = &mut header_name_bytes[i];
+            if *p == b'-' {
                 i += 1;
+                if i < n {
+                    header_name_bytes[i] = TO_UPPER_TABLE[header_name_bytes[i] as usize];
+                    i += 1;
+                }
+                continue;
             }
-            continue;
+            *p = TO_LOWER_TABLE[*p as usize];
+            i += 1;
         }
-        *p = TO_LOWER_TABLE[*p as usize];
-        i += 1;
-    }
 
-    HeaderName::from_bytes(header_name_bytes).unwrap()
+        HeaderName::from_bytes(header_name_bytes).unwrap()
+    }
 }
 
 #[allow(dead_code)]
 #[cfg(test)]
 mod tests {
-    use crate::ext::fasthttp::consts::STANDARD_HEADERS;
-    use crate::ext::fasthttp::header_name::normalize_header_key2;
+    use crate::ext::fasthttp::header_name::{normalize_header_key, normalize_header_key2};
     use crate::HeaderName;
     use std::str::FromStr;
-
-    fn normalize_header_key(header_name: &mut HeaderName, disable_normalizing: bool) -> HeaderName {
-        if disable_normalizing {
-            return header_name.clone();
-        }
-
-        // 只normalize标准header，其他自定义header保持原样透传
-        if !STANDARD_HEADERS.is_std_header(header_name.as_str()) {
-            return header_name.clone();
-        }
-
-        unsafe { normalize_header_key2(header_name).into() }
-    }
 
     #[test]
     fn test_normalize_header_key() {
@@ -106,28 +111,22 @@ mod tests {
     #[test]
     fn test_normalize_header_key2() {
         let mut header_name = HeaderName::from_str("content-type").unwrap();
-        unsafe {
-            assert_eq!(
-                normalize_header_key2(&mut header_name).into().as_raw_str(),
-                "Content-Type"
-            );
-        }
+        assert_eq!(
+            normalize_header_key2(&mut header_name).into().as_raw_str(),
+            "Content-Type"
+        );
 
         let mut header_name = HeaderName::from_str("Content-Type").unwrap();
-        unsafe {
-            assert_eq!(
-                normalize_header_key2(&mut header_name).into().as_raw_str(),
-                "Content-Type"
-            );
-        }
+        assert_eq!(
+            normalize_header_key2(&mut header_name).into().as_raw_str(),
+            "Content-Type"
+        );
 
         // 非标准header，不做处理
         let mut header_name = HeaderName::from_str("x-tt-agw").unwrap();
-        unsafe {
-            assert_eq!(
-                normalize_header_key2(&mut header_name).into().as_raw_str(),
-                "X-Tt-Agw"
-            );
-        }
+        assert_eq!(
+            normalize_header_key2(&mut header_name).into().as_raw_str(),
+            "X-Tt-Agw"
+        );
     }
 }

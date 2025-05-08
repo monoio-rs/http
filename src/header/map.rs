@@ -3,7 +3,11 @@ pub use self::into_header_name::IntoHeaderName;
 use super::name::{HdrName, HeaderName, InvalidHeaderName};
 use super::HeaderValue;
 #[cfg(feature = "fasthttp")]
-use crate::ext::fasthttp::header_name::normalize_header_key2;
+use super::{
+    CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HOST, TRANSFER_ENCODING, USER_AGENT,
+};
+#[cfg(feature = "fasthttp")]
+use crate::ext::fasthttp::header_name::{normalize_header_key, normalize_header_key2};
 use crate::Error;
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
@@ -50,15 +54,7 @@ pub struct HeaderMap<T = HeaderValue> {
     danger: Danger,
 
     #[cfg(feature = "fasthttp")]
-    keys: HashMap<HeaderName, HeaderName>, // normalized_key -> original_key
-}
-
-#[cfg(feature = "fasthttp")]
-pub fn normalize_key<K>(key: &K) -> impl Into<HeaderName>
-where
-    K: Into<HeaderName> + Clone,
-{
-    unsafe { normalize_header_key2(key) }
+    mapped_keys: HashMap<HeaderName, Vec<HeaderName>>, // normalized_key -> original_keys
 }
 
 // # Implementation notes
@@ -461,6 +457,38 @@ impl HeaderMap {
 }
 
 impl<T> HeaderMap<T> {
+    #[cfg(feature = "fasthttp")]
+    fn append_key(&mut self, original_key: HeaderName) {
+        let normalized_key = normalize_header_key2(&original_key).into();
+        match self.mapped_keys.get_mut(&normalized_key) {
+            Some(original_keys) => original_keys.push(original_key),
+            None => {
+                let mut original_keys = Vec::new();
+                original_keys.push(original_key.clone());
+                self.mapped_keys.insert(normalized_key, original_keys);
+            }
+        }
+    }
+
+    #[cfg(feature = "fasthttp")]
+    fn clean_insensitive_keys(&mut self, original_key: &HeaderName) {
+        let normalized_key = normalize_header_key2(&original_key).into();
+
+        let mut keys = Vec::new();
+
+        if let Some(original_keys) = self.mapped_keys.get(&normalized_key) {
+            for key in original_keys {
+                keys.push(key.clone());
+            }
+        }
+
+        for key in keys {
+            self.remove(key);
+        }
+
+        self.mapped_keys.remove(&normalized_key);
+    }
+
     /// Create an empty `HeaderMap` with the specified capacity.
     ///
     /// The returned map will allocate internal storage in order to hold about
@@ -518,7 +546,7 @@ impl<T> HeaderMap<T> {
                 extra_values: Vec::new(),
                 danger: Danger::Green,
                 #[cfg(feature = "fasthttp")]
-                keys: HashMap::new(),
+                mapped_keys: HashMap::new(),
             })
         } else {
             let raw_cap = match to_raw_capacity(capacity).checked_next_power_of_two() {
@@ -537,7 +565,7 @@ impl<T> HeaderMap<T> {
                 extra_values: Vec::new(),
                 danger: Danger::Green,
                 #[cfg(feature = "fasthttp")]
-                keys: HashMap::new(),
+                mapped_keys: HashMap::new(),
             })
         }
     }
@@ -636,7 +664,7 @@ impl<T> HeaderMap<T> {
         self.extra_values.clear();
         self.danger = Danger::Green;
         #[cfg(feature = "fasthttp")]
-        self.keys.clear();
+        self.mapped_keys.clear();
 
         for e in self.indices.iter_mut() {
             *e = Pos::none();
@@ -1181,6 +1209,38 @@ impl<T> HeaderMap<T> {
         // Ensure that there is space in the map
         self.try_reserve_one()?;
 
+        #[cfg(feature = "fasthttp")]
+        {
+            Ok(insert_phase_one!(
+                self,
+                key,
+                probe,
+                pos,
+                hash,
+                danger,
+                Entry::Vacant(VacantEntry {
+                    map: self,
+                    hash,
+                    key: key.into(),
+                    probe,
+                    danger,
+                }),
+                Entry::Occupied(OccupiedEntry {
+                    map: self,
+                    index: pos,
+                    probe,
+                }),
+                Entry::Vacant(VacantEntry {
+                    map: self,
+                    hash,
+                    key: key.into(),
+                    probe,
+                    danger,
+                })
+            ))
+        }
+
+        #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
             key,
@@ -1287,17 +1347,6 @@ impl<T> HeaderMap<T> {
     }
 
     #[inline]
-    #[cfg(feature = "fasthttp")]
-    fn update_key_map(&mut self, key: &HeaderName) {
-        let normalized_key = normalize_key(key).into();
-        if let Some(original_key) = self.keys.get(&normalized_key) {
-            self.remove(original_key.clone());
-        }
-
-        self.keys.insert(normalized_key, key.clone());
-    }
-
-    #[inline]
     fn try_insert2<K>(&mut self, key: K, value: T) -> Result<Option<T>, MaxSizeReached>
     where
         K: Hash + Into<HeaderName>,
@@ -1305,6 +1354,34 @@ impl<T> HeaderMap<T> {
     {
         self.try_reserve_one()?;
 
+        #[cfg(feature = "fasthttp")]
+        {
+            Ok(insert_phase_one!(
+                self,
+                key,
+                probe,
+                pos,
+                hash,
+                danger,
+                // Vacant
+                {
+                    let _ = danger; // Make lint happy
+                    self.try_insert_entry(hash, key.into(), value)?;
+                    let index = self.entries.len() - 1;
+                    self.indices[probe] = Pos::new(index, hash);
+                    None
+                },
+                // Occupied
+                Some(self.insert_occupied(pos, value)),
+                // Robinhood
+                {
+                    self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                    None
+                }
+            ))
+        }
+
+        #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
             key,
@@ -1326,7 +1403,8 @@ impl<T> HeaderMap<T> {
             {
                 self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
                 None
-            }
+            },
+            true
         ))
     }
 
@@ -1448,6 +1526,38 @@ impl<T> HeaderMap<T> {
     {
         self.try_reserve_one()?;
 
+        #[cfg(feature = "fasthttp")]
+        {
+            Ok(insert_phase_one!(
+                self,
+                key,
+                probe,
+                pos,
+                hash,
+                danger,
+                // Vacant
+                {
+                    let _ = danger;
+                    let index = self.entries.len();
+                    self.try_insert_entry_for_append(hash, key.into(), value)?;
+                    self.indices[probe] = Pos::new(index, hash);
+                    false
+                },
+                // Occupied
+                {
+                    Some(self.insert_occupied(pos, value));
+                    true
+                },
+                // Robinhood
+                {
+                    self.try_insert_phase_two_for_append(key.into(), value, hash, probe, danger)?;
+
+                    false
+                }
+            ))
+        }
+
+        #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
             key,
@@ -1473,7 +1583,8 @@ impl<T> HeaderMap<T> {
                 self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
 
                 false
-            }
+            },
+            None
         ))
     }
 
@@ -1490,8 +1601,16 @@ impl<T> HeaderMap<T> {
         self.find2(key).or({
             #[cfg(feature = "fasthttp")]
             {
-                match self.keys.get(&normalize_key(key).into()) {
-                    Some(original_key) => self.find2::<HeaderName>(original_key),
+                match self.mapped_keys.get(&normalize_header_key2(key).into()) {
+                    Some(original_keys) => {
+                        // 取第一个 key
+                        match original_keys.first() {
+                            Some(first_original_key) => {
+                                self.find2::<HeaderName>(first_original_key)
+                            }
+                            None => None,
+                        }
+                    }
                     None => None,
                 }
             }
@@ -1538,11 +1657,59 @@ impl<T> HeaderMap<T> {
         probe: usize,
         danger: bool,
     ) -> Result<usize, MaxSizeReached> {
-        #[cfg(feature = "fasthttp")]
-        self.update_key_map(&key);
         // Push the value and get the index
         let index = self.entries.len();
+
+        #[cfg(feature = "fasthttp")]
+        self.try_insert_entry(hash, key.clone(), value)?;
+        #[cfg(not(feature = "fasthttp"))]
         self.try_insert_entry(hash, key, value)?;
+
+        #[cfg(feature = "fasthttp")]
+        {
+            self.clean_insensitive_keys(&key);
+            self.append_key(key)
+        }
+
+        let num_displaced = do_insert_phase_two(&mut self.indices, probe, Pos::new(index, hash));
+
+        if danger || num_displaced >= DISPLACEMENT_THRESHOLD {
+            // Increase danger level
+            self.danger.set_yellow();
+        }
+
+        Ok(index)
+    }
+
+    #[inline]
+    #[cfg(feature = "fasthttp")]
+    fn try_insert_phase_two_for_append(
+        &mut self,
+        key: HeaderName,
+        value: T,
+        hash: HashValue,
+        probe: usize,
+        danger: bool,
+    ) -> Result<usize, MaxSizeReached> {
+        // Push the value and get the index
+        let index = self.entries.len();
+
+        #[cfg(feature = "fasthttp")]
+        self.try_insert_entry(hash, key.clone(), value)?;
+        #[cfg(not(feature = "fasthttp"))]
+        self.try_insert_entry(hash, key, value)?;
+
+        let normalized_key = normalize_header_key(&(key.clone()), false);
+        match normalized_key {
+            HOST | CONTENT_TYPE | USER_AGENT | COOKIE | CONTENT_LENGTH | CONNECTION
+            | TRANSFER_ENCODING => {
+                // 清理掉所有的 insensitive key
+                self.clean_insensitive_keys(&key);
+            }
+            _ => {}
+        }
+
+        self.append_key(key);
 
         let num_displaced = do_insert_phase_two(&mut self.indices, probe, Pos::new(index, hash));
 
@@ -1679,12 +1846,49 @@ impl<T> HeaderMap<T> {
         key: HeaderName,
         value: T,
     ) -> Result<(), MaxSizeReached> {
-        #[cfg(feature = "fasthttp")]
-        self.update_key_map(&key);
-
         if self.entries.len() >= MAX_SIZE {
             return Err(MaxSizeReached::new());
         }
+
+        #[cfg(feature = "fasthttp")]
+        {
+            self.clean_insensitive_keys(&key);
+            self.append_key(key.clone());
+        }
+
+        self.entries.push(Bucket {
+            hash,
+            key,
+            value,
+            links: None,
+        });
+
+        Ok(())
+    }
+
+    #[inline]
+    #[cfg(feature = "fasthttp")]
+    fn try_insert_entry_for_append(
+        &mut self,
+        hash: HashValue,
+        key: HeaderName,
+        value: T,
+    ) -> Result<(), MaxSizeReached> {
+        if self.entries.len() >= MAX_SIZE {
+            return Err(MaxSizeReached::new());
+        }
+
+        let normalized_key = normalize_header_key(&(key.clone()), false).into();
+        match normalized_key {
+            HOST | CONTENT_TYPE | USER_AGENT | COOKIE | CONTENT_LENGTH | CONNECTION
+            | TRANSFER_ENCODING => {
+                // 清理掉所有的 insensitive key
+                self.clean_insensitive_keys(&key);
+            }
+            _ => {}
+        }
+
+        self.append_key(key.clone());
 
         self.entries.push(Bucket {
             hash,

@@ -4,6 +4,7 @@ use crate::header::{
     LAST_MODIFIED, LOCATION, ORIGIN, RANGE, REFERER, SERVER, SET_COOKIE, TRANSFER_ENCODING,
     USER_AGENT,
 };
+use crate::HeaderName;
 use lazy_static::lazy_static;
 use trie_rs::{Trie, TrieBuilder};
 
@@ -77,7 +78,8 @@ impl StandardHeaders {
         StandardHeaders(trie)
     }
 
-    pub fn is_std_header(&self, header_name: &str) -> bool {
+    pub fn is_std_header(&self, header_name: &HeaderName) -> bool
+    {
         self.0.exact_match(header_name)
     }
 }
