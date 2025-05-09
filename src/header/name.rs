@@ -2210,6 +2210,36 @@ mod fasthttp_tests {
     }
 
     #[test]
+    fn test_append2() {
+        let mut header_map = HeaderMap::new();
+        header_map.insert(
+            HeaderName::from_bytes("rpc-persist-lane-p-aid".as_bytes()).unwrap(),
+            HeaderValue::from_static("1"),
+        );
+        header_map.append(
+            HeaderName::from_bytes("rpc-persist-Lane-P-Aid".as_bytes()).unwrap(),
+            HeaderValue::from_static("1"),
+        );
+
+        assert_eq!(header_map.len(), 2);
+
+        assert_eq!(header_map.get("rpc-persist-lane-p-aid").unwrap(), "1");
+        assert_eq!(header_map.get("rpc-persist-Lane-P-Aid").unwrap(), "1");
+
+        let mut iter = header_map.iter();
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("rpc-persist-lane-p-aid", "1")
+        );
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("rpc-persist-Lane-P-Aid", "1")
+        );
+    }
+
+    #[test]
     fn test_header_insert() {
         let request = Request::builder()
             .uri("/")

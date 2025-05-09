@@ -1403,8 +1403,7 @@ impl<T> HeaderMap<T> {
             {
                 self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
                 None
-            },
-            true
+            }
         ))
     }
 
@@ -1583,8 +1582,7 @@ impl<T> HeaderMap<T> {
                 self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
 
                 false
-            },
-            None
+            }
         ))
     }
 
@@ -1660,16 +1658,7 @@ impl<T> HeaderMap<T> {
         // Push the value and get the index
         let index = self.entries.len();
 
-        #[cfg(feature = "fasthttp")]
-        self.try_insert_entry(hash, key.clone(), value)?;
-        #[cfg(not(feature = "fasthttp"))]
         self.try_insert_entry(hash, key, value)?;
-
-        #[cfg(feature = "fasthttp")]
-        {
-            self.clean_insensitive_keys(&key);
-            self.append_key(key)
-        }
 
         let num_displaced = do_insert_phase_two(&mut self.indices, probe, Pos::new(index, hash));
 
@@ -1694,22 +1683,7 @@ impl<T> HeaderMap<T> {
         // Push the value and get the index
         let index = self.entries.len();
 
-        #[cfg(feature = "fasthttp")]
-        self.try_insert_entry(hash, key.clone(), value)?;
-        #[cfg(not(feature = "fasthttp"))]
-        self.try_insert_entry(hash, key, value)?;
-
-        let normalized_key = normalize_header_key(&(key.clone()), false);
-        match normalized_key {
-            HOST | CONTENT_TYPE | USER_AGENT | COOKIE | CONTENT_LENGTH | CONNECTION
-            | TRANSFER_ENCODING => {
-                // 清理掉所有的 insensitive key
-                self.clean_insensitive_keys(&key);
-            }
-            _ => {}
-        }
-
-        self.append_key(key);
+        self.try_insert_entry_for_append(hash, key.clone(), value)?;
 
         let num_displaced = do_insert_phase_two(&mut self.indices, probe, Pos::new(index, hash));
 
@@ -2571,7 +2545,7 @@ impl<'a, T> IterMut<'a, T> {
             self.cursor = Some(Cursor::Head);
         }
 
-        let entry = unsafe { &mut (*self.map).entries[self.entry] };
+        let entry = unsafe { &mut (&mut (*self.map).entries)[self.entry] };
 
         match self.cursor.unwrap() {
             Head => {
@@ -2579,7 +2553,7 @@ impl<'a, T> IterMut<'a, T> {
                 Some((&entry.key, &mut entry.value as *mut _))
             }
             Values(idx) => {
-                let extra = unsafe { &mut (*self.map).extra_values[idx] };
+                let extra = unsafe { &mut (&mut (*self.map).extra_values)[idx] };
 
                 match extra.next {
                     Link::Entry(_) => self.cursor = None,
@@ -3219,7 +3193,7 @@ impl<'a, T: 'a> Iterator for ValueIterMut<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         use self::Cursor::*;
 
-        let entry = unsafe { &mut (*self.map).entries[self.index] };
+        let entry = unsafe { &mut (&mut (*self.map).entries)[self.index] };
 
         match self.front {
             Some(Head) => {
@@ -3239,7 +3213,7 @@ impl<'a, T: 'a> Iterator for ValueIterMut<'a, T> {
                 Some(&mut entry.value)
             }
             Some(Values(idx)) => {
-                let extra = unsafe { &mut (*self.map).extra_values[idx] };
+                let extra = unsafe { &mut (&mut (*self.map).extra_values)[idx] };
 
                 if self.front == self.back {
                     self.front = None;
@@ -3262,7 +3236,7 @@ impl<'a, T: 'a> DoubleEndedIterator for ValueIterMut<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         use self::Cursor::*;
 
-        let entry = unsafe { &mut (*self.map).entries[self.index] };
+        let entry = unsafe { &mut (&mut (*self.map).entries)[self.index] };
 
         match self.back {
             Some(Head) => {
@@ -3271,7 +3245,7 @@ impl<'a, T: 'a> DoubleEndedIterator for ValueIterMut<'a, T> {
                 Some(&mut entry.value)
             }
             Some(Values(idx)) => {
-                let extra = unsafe { &mut (*self.map).extra_values[idx] };
+                let extra = unsafe { &mut (&mut (*self.map).extra_values)[idx] };
 
                 if self.front == self.back {
                     self.front = None;
