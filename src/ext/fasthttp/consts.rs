@@ -78,8 +78,7 @@ impl StandardHeaders {
         StandardHeaders(trie)
     }
 
-    pub fn is_std_header(&self, header_name: &HeaderName) -> bool
-    {
+    pub fn is_std_header(&self, header_name: &HeaderName) -> bool {
         self.0.exact_match(header_name)
     }
 }

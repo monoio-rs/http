@@ -164,6 +164,7 @@ pub struct Request<T> {
 ///
 /// The HTTP request head consists of a method, uri, version, and a set of
 /// header fields.
+#[allow(warnings)]
 #[derive(Clone)]
 pub struct Parts {
     /// The request's method

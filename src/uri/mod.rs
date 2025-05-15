@@ -102,6 +102,7 @@ pub struct Uri {
 /// The various parts of a URI.
 ///
 /// This struct is used to provide to and retrieve from a URI.
+#[allow(warnings)]
 #[derive(Debug, Default)]
 pub struct Parts {
     /// The scheme component of a URI

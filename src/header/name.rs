@@ -1830,9 +1830,9 @@ unsafe fn slice_assume_init<T>(slice: &[MaybeUninit<T>]) -> &[T] {
 
 #[cfg(test)]
 mod tests {
-    use crate::{HeaderMap};
     use self::StandardHeader::Vary;
     use super::*;
+    use crate::HeaderMap;
 
     #[test]
     fn test_bounds() {
@@ -2246,8 +2246,12 @@ mod fasthttp_tests {
             .header("X-Tt-Log-Id", "logid")
             .body(())
             .unwrap();
-        let logid = request.headers().get("x-tt-log-id").unwrap().to_str().unwrap();
+        let logid = request
+            .headers()
+            .get("x-tt-log-id")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert_eq!(logid, "logid".to_string());
     }
-
 }

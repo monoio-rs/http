@@ -720,3 +720,127 @@ fn feature_double_write() {
     assert_eq!(headers.get("foo1"), Some(&HeaderValue::from_static("baz1")));
     assert_eq!(headers.get("Foo1"), None);
 }
+
+#[cfg(test)]
+#[cfg(feature = "fasthttp")]
+mod fasthttp_tests {
+    use crate::header::HeaderMap;
+    use crate::{HeaderName, HeaderValue, Request};
+
+    #[test]
+    fn test_insert() {
+        let mut header_map = HeaderMap::new();
+
+        header_map.insert(
+            HeaderName::from_bytes("x-tt-agw-key1".as_bytes()).unwrap(),
+            HeaderValue::from_static("1"),
+        );
+        assert_eq!(header_map.get("x-tt-agw-key1").unwrap(), "1");
+        assert_eq!(header_map.get("X-Tt-Agw-Key1").unwrap(), "1");
+        assert_eq!(header_map.len(), 1);
+
+        header_map.insert(
+            HeaderName::from_bytes("X-Tt-agw-key1".as_bytes()).unwrap(),
+            HeaderValue::from_static("2"),
+        );
+        assert_eq!(header_map.get("X-Tt-agw-key1").unwrap(), "2");
+        assert_eq!(header_map.get("X-Tt-Agw-Key1").unwrap(), "2");
+        assert_eq!(header_map.len(), 1);
+
+        header_map.insert(
+            HeaderName::from_bytes("x-tt-agw-key2".as_bytes()).unwrap(),
+            HeaderValue::from_static("3"),
+        );
+        assert_eq!(header_map.len(), 2);
+
+        let mut iter = header_map.iter();
+
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("X-Tt-agw-key1", "2")
+        );
+
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("x-tt-agw-key2", "3")
+        );
+    }
+
+    #[test]
+    fn test_append() {
+        let mut header_map = HeaderMap::new();
+        header_map.insert(
+            HeaderName::from_bytes("x-tt-agw-key1".as_bytes()).unwrap(),
+            HeaderValue::from_static("1"),
+        );
+        header_map.append(
+            HeaderName::from_bytes("X-Tt-Agw-Key1".as_bytes()).unwrap(),
+            HeaderValue::from_static("2"),
+        );
+
+        assert_eq!(header_map.len(), 2);
+
+        assert_eq!(header_map.get("x-tt-agw-key1").unwrap(), "1");
+        assert_eq!(header_map.get("X-Tt-Agw-Key1").unwrap(), "2");
+
+        let mut iter = header_map.iter();
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("x-tt-agw-key1", "1")
+        );
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("X-Tt-Agw-Key1", "2")
+        );
+    }
+
+    #[test]
+    fn test_append2() {
+        let mut header_map = HeaderMap::new();
+        header_map.insert(
+            HeaderName::from_bytes("rpc-persist-lane-p-aid".as_bytes()).unwrap(),
+            HeaderValue::from_static("1"),
+        );
+        header_map.append(
+            HeaderName::from_bytes("rpc-persist-Lane-P-Aid".as_bytes()).unwrap(),
+            HeaderValue::from_static("1"),
+        );
+
+        assert_eq!(header_map.len(), 2);
+
+        assert_eq!(header_map.get("rpc-persist-lane-p-aid").unwrap(), "1");
+        assert_eq!(header_map.get("rpc-persist-Lane-P-Aid").unwrap(), "1");
+
+        let mut iter = header_map.iter();
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("rpc-persist-lane-p-aid", "1")
+        );
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("rpc-persist-Lane-P-Aid", "1")
+        );
+    }
+
+    #[test]
+    fn test_header_insert() {
+        let request = Request::builder()
+            .uri("/")
+            .header("X-Tt-Log-Id", "logid")
+            .body(())
+            .unwrap();
+        let logid = request
+            .headers()
+            .get("x-tt-log-id")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(logid, "logid".to_string());
+    }
+}

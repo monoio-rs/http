@@ -186,6 +186,7 @@ pub struct Response<T> {
 ///
 /// The HTTP response head consists of a status, version, and a set of
 /// header fields.
+#[allow(warnings)]
 #[derive(Clone)]
 pub struct Parts {
     /// The response's status
