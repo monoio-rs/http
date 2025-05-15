@@ -457,8 +457,10 @@ impl HeaderMap {
 }
 
 impl<T> HeaderMap<T> {
+    ///
+    ///
     #[cfg(feature = "fasthttp")]
-    fn append_key(&mut self, original_key: HeaderName) {
+    fn append_to_mapped_keys(&mut self, original_key: HeaderName) {
         let normalized_key = normalize_header_key2(&original_key).into();
         match self.mapped_keys.get_mut(&normalized_key) {
             Some(original_keys) => original_keys.push(original_key),
@@ -471,7 +473,7 @@ impl<T> HeaderMap<T> {
     }
 
     #[cfg(feature = "fasthttp")]
-    fn clean_insensitive_keys(&mut self, original_key: &HeaderName) {
+    fn remove_key_insensitively(&mut self, original_key: &HeaderName) {
         let normalized_key = normalize_header_key2(&original_key).into();
 
         let mut keys = Vec::new();
@@ -1392,8 +1394,8 @@ impl<T> HeaderMap<T> {
             // Vacant
             {
                 let _ = danger; // Make lint happy
+                let index = self.entries.len();
                 self.try_insert_entry(hash, key.into(), value)?;
-                let index = self.entries.len() - 1;
                 self.indices[probe] = Pos::new(index, hash);
                 None
             },
@@ -1826,8 +1828,8 @@ impl<T> HeaderMap<T> {
 
         #[cfg(feature = "fasthttp")]
         {
-            self.clean_insensitive_keys(&key);
-            self.append_key(key.clone());
+            self.remove_key_insensitively(&key);
+            self.append_to_mapped_keys(key.clone());
         }
 
         self.entries.push(Bucket {
@@ -1857,12 +1859,12 @@ impl<T> HeaderMap<T> {
             HOST | CONTENT_TYPE | USER_AGENT | COOKIE | CONTENT_LENGTH | CONNECTION
             | TRANSFER_ENCODING => {
                 // 清理掉所有的 insensitive key
-                self.clean_insensitive_keys(&key);
+                self.remove_key_insensitively(&key);
             }
             _ => {}
         }
 
-        self.append_key(key.clone());
+        self.append_to_mapped_keys(key.clone());
 
         self.entries.push(Bucket {
             hash,

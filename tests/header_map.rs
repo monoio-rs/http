@@ -829,6 +829,27 @@ mod fasthttp_tests {
     }
 
     #[test]
+    fn test_get() {
+        let mut header_map = HeaderMap::new();
+        header_map.insert(
+            HeaderName::from_bytes("Content-Type".as_bytes()).unwrap(),
+            HeaderValue::from_static("application/json"),
+        );
+        assert_eq!(header_map.get("content-type").unwrap(), "application/json");
+    }
+
+    #[test]
+    fn test_get_with_request() {
+        let mut request = Request::builder()
+            .uri("/")
+            .header("Content-Type", "application/json")
+            .body(())
+            .unwrap();
+
+        request.headers().get("content-type").unwrap();
+    }
+
+    #[test]
     fn test_header_insert() {
         let request = Request::builder()
             .uri("/")
