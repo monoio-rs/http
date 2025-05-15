@@ -1211,38 +1211,6 @@ impl<T> HeaderMap<T> {
         // Ensure that there is space in the map
         self.try_reserve_one()?;
 
-        #[cfg(feature = "fasthttp")]
-        {
-            Ok(insert_phase_one!(
-                self,
-                key,
-                probe,
-                pos,
-                hash,
-                danger,
-                Entry::Vacant(VacantEntry {
-                    map: self,
-                    hash,
-                    key: key.into(),
-                    probe,
-                    danger,
-                }),
-                Entry::Occupied(OccupiedEntry {
-                    map: self,
-                    index: pos,
-                    probe,
-                }),
-                Entry::Vacant(VacantEntry {
-                    map: self,
-                    hash,
-                    key: key.into(),
-                    probe,
-                    danger,
-                })
-            ))
-        }
-
-        #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
             key,
@@ -1546,7 +1514,7 @@ impl<T> HeaderMap<T> {
                 },
                 // Occupied
                 {
-                    Some(self.insert_occupied(pos, value));
+                    append_value(pos, &mut self.entries[pos], &mut self.extra_values, value);
                     true
                 },
                 // Robinhood

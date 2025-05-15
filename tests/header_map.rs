@@ -840,7 +840,7 @@ mod fasthttp_tests {
 
     #[test]
     fn test_get_with_request() {
-        let mut request = Request::builder()
+        let request = Request::builder()
             .uri("/")
             .header("Content-Type", "application/json")
             .body(())
