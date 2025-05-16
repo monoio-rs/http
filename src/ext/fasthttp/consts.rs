@@ -12,7 +12,6 @@ pub(crate) struct StandardHeaders(Trie<u8>);
 
 impl StandardHeaders {
     fn new() -> StandardHeaders {
-        // FIXME: 是否需要将 "Content-type" 也加入到 trie 中？
         let mut builder = TrieBuilder::new();
 
         // RFC标准header
