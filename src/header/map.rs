@@ -10,6 +10,7 @@ use super::{
 use crate::ext::fasthttp::header_name::{
     normalize_header_key, normalize_header_key_for_std_header,
 };
+#[cfg(feature = "fasthttp")]
 use crate::header::map::as_header_name::Sealed;
 use crate::Error;
 use std::collections::hash_map::RandomState;
@@ -1576,13 +1577,12 @@ impl<T> HeaderMap<T> {
             {
                 match self.mapped_keys.get(&normalize_header_key(key).into()) {
                     Some(original_keys) => {
-                        // get first original key
-                        match original_keys.first() {
-                            Some(first_original_key) => {
-                                self.find2::<HeaderName>(first_original_key)
+                        for original_key in original_keys {
+                            if original_key != key {
+                                return self.find2::<HeaderName>(original_key);
                             }
-                            None => None,
                         }
+                        None
                     }
                     None => None,
                 }
