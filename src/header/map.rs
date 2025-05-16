@@ -1714,12 +1714,17 @@ impl<T> HeaderMap<T> {
                         if return_original_key == header_name {
                             return_original_key.clone()
                         } else {
+                            let mut is_found = false;
                             for original_key in original_keys.into_iter() {
                                 i -= 1;
                                 return_original_key = original_key;
                                 if original_key == header_name {
+                                    is_found = true;
                                     break;
                                 }
+                            }
+                            if !is_found {
+                                return None;
                             }
                             return_original_key.clone()
                         }
