@@ -62,6 +62,18 @@ enum Repr<T> {
 
 impl<T: StructuralPartialEq> StructuralPartialEq for Repr<T> {}
 
+#[cfg(not(feature = "double-write"))]
+impl<T: PartialEq> PartialEq for Repr<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Standard(l, _), Self::Standard(r, _)) => l == r,
+            (Self::Custom(l, _), Self::Custom(r, _)) => l == r,
+            _ => false,
+        }
+    }
+}
+
+#[cfg(feature = "double-write")]
 impl<T: PartialEq> PartialEq for Repr<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
