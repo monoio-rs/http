@@ -65,7 +65,11 @@ impl<T: StructuralPartialEq> StructuralPartialEq for Repr<T> {}
 impl<T: PartialEq> PartialEq for Repr<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Standard(l, _), Self::Standard(r, _)) => l == r,
+            (Self::Standard(la, lb), Self::Standard(ra, rb)) => match (lb, rb) {
+                (Some(lb), Some(rb)) => lb == rb,
+                (None, None) => la == ra,
+                _ => false,
+            },
             (Self::Custom(l, _), Self::Custom(r, _)) => l == r,
             _ => false,
         }

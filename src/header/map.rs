@@ -7,7 +7,10 @@ use super::{
     CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HOST, TRANSFER_ENCODING, USER_AGENT,
 };
 #[cfg(feature = "fasthttp")]
-use crate::ext::fasthttp::header_name::{normalize_header_key, normalize_header_key2};
+use crate::ext::fasthttp::header_name::{
+    normalize_header_key, normalize_header_key_for_std_header,
+};
+use crate::header::map::as_header_name::Sealed;
 use crate::Error;
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
@@ -15,6 +18,8 @@ use std::convert::TryFrom;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::iter::{FromIterator, FusedIterator};
 use std::marker::PhantomData;
+#[cfg(feature = "fasthttp")]
+use std::str::FromStr;
 use std::{fmt, mem, ops, ptr, vec};
 
 /// A set of HTTP headers
@@ -461,7 +466,7 @@ impl<T> HeaderMap<T> {
     ///
     #[cfg(feature = "fasthttp")]
     fn append_to_mapped_keys(&mut self, original_key: HeaderName) {
-        let normalized_key = normalize_header_key2(&original_key).into();
+        let normalized_key = normalize_header_key(&original_key).into();
         match self.mapped_keys.get_mut(&normalized_key) {
             Some(original_keys) => original_keys.push(original_key),
             None => {
@@ -474,7 +479,7 @@ impl<T> HeaderMap<T> {
 
     #[cfg(feature = "fasthttp")]
     fn remove_key_insensitively(&mut self, original_key: &HeaderName) {
-        let normalized_key = normalize_header_key2(&original_key).into();
+        let normalized_key = normalize_header_key(&original_key).into();
 
         let mut keys = Vec::new();
 
@@ -1569,9 +1574,9 @@ impl<T> HeaderMap<T> {
         self.find2(key).or({
             #[cfg(feature = "fasthttp")]
             {
-                match self.mapped_keys.get(&normalize_header_key2(key).into()) {
+                match self.mapped_keys.get(&normalize_header_key(key).into()) {
                     Some(original_keys) => {
-                        // 取第一个 key
+                        // get first original key
                         match original_keys.first() {
                             Some(first_original_key) => {
                                 self.find2::<HeaderName>(first_original_key)
@@ -1689,6 +1694,63 @@ impl<T> HeaderMap<T> {
     where
         K: AsHeaderName,
     {
+        #[cfg(feature = "fasthttp")]
+        {
+            let header_name = match HeaderName::from_str(key.as_str()) {
+                Ok(header_name) => header_name,
+                Err(_) => return None,
+            };
+
+            let normalized_key = normalize_header_key(&header_name).into();
+
+            let mut i;
+            let original_key = match self.mapped_keys.get(&normalized_key) {
+                Some(original_keys) => match original_keys.iter().next_back() {
+                    Some(return_original_key) => {
+                        i = original_keys.len() - 1;
+                        let mut return_original_key = return_original_key;
+                        let _a = return_original_key.clone().as_raw_str();
+                        let _b = header_name.clone().as_raw_str();
+                        if return_original_key == header_name {
+                            return_original_key.clone()
+                        } else {
+                            for original_key in original_keys.into_iter() {
+                                i -= 1;
+                                return_original_key = original_key;
+                                if original_key == header_name {
+                                    break;
+                                }
+                            }
+                            return_original_key.clone()
+                        }
+                    }
+                    None => return None,
+                },
+                None => {
+                    return None;
+                }
+            };
+
+            match original_key.find(self) {
+                Some((probe, idx)) => {
+                    if let Some(links) = self.entries[idx].links {
+                        self.remove_all_extra_values(links.next);
+                    }
+
+                    let entry = self.remove_found(probe, idx);
+
+                    self.mapped_keys
+                        .get_mut(&normalized_key)
+                        .map(|original_keys| {
+                            original_keys.remove(i);
+                        });
+                    Some(entry.value)
+                }
+                None => None,
+            }
+        }
+
+        #[cfg(not(feature = "fasthttp"))]
         match key.find(self) {
             Some((probe, idx)) => {
                 if let Some(links) = self.entries[idx].links {
@@ -1701,6 +1763,43 @@ impl<T> HeaderMap<T> {
             }
             None => None,
         }
+    }
+
+    /// Remove all keys that case-insensitively equal
+    #[cfg(feature = "fasthttp")]
+    pub fn remove_all<K>(&mut self, key: K) -> Option<Vec<T>>
+    where
+        K: AsHeaderName,
+    {
+        let header_name = HeaderName::from_str(key.as_str()).ok();
+
+        let normalized_key = match header_name {
+            Some(header_name) => normalize_header_key(&header_name).into(),
+            None => {
+                return None;
+            }
+        };
+
+        let mut return_headers = vec![];
+
+        let original_keys = match self.mapped_keys.get(&normalized_key) {
+            Some(original_keys) => original_keys.clone(),
+            None => {
+                return None;
+            }
+        };
+
+        for original_key in original_keys {
+            if let Some((probe, idx)) = self.find(&original_key) {
+                if let Some(links) = self.entries[idx].links {
+                    self.remove_all_extra_values(links.next);
+                }
+                let entry = self.remove_found(probe, idx);
+                return_headers.push(entry.value);
+            }
+        }
+
+        Some(return_headers)
     }
 
     /// Remove an entry from the map.
@@ -1822,7 +1921,7 @@ impl<T> HeaderMap<T> {
             return Err(MaxSizeReached::new());
         }
 
-        let normalized_key = normalize_header_key(&(key.clone()), false).into();
+        let normalized_key = normalize_header_key_for_std_header(&(key.clone()), false).into();
         match normalized_key {
             HOST | CONTENT_TYPE | USER_AGENT | COOKIE | CONTENT_LENGTH | CONNECTION
             | TRANSFER_ENCODING => {
