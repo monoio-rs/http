@@ -82,7 +82,11 @@ impl<T: PartialEq> PartialEq for Repr<T> {
                 (None, None) => la == ra,
                 _ => false,
             },
-            (Self::Custom(l, _), Self::Custom(r, _)) => l == r,
+            (Self::Custom(la, lb), Self::Custom(ra, rb)) => match (lb, rb) {
+                (Some(lb), Some(rb)) => lb == rb,
+                (None, None) => la == ra,
+                _ => la == ra,
+            },
             _ => false,
         }
     }
@@ -1765,6 +1769,7 @@ impl<'a> From<HdrName<'a>> for HeaderName {
 }
 
 #[doc(hidden)]
+#[cfg(not(feature = "double-write"))]
 impl<'a> PartialEq<HdrName<'a>> for HeaderName {
     #[inline]
     fn eq(&self, other: &HdrName<'a>) -> bool {
@@ -1781,6 +1786,38 @@ impl<'a> PartialEq<HdrName<'a>> for HeaderName {
                         eq_ignore_ascii_case(a.as_bytes(), b.buf)
                     }
                 }
+                _ => false,
+            },
+        }
+    }
+}
+
+#[doc(hidden)]
+#[cfg(feature = "double-write")]
+impl<'a> PartialEq<HdrName<'a>> for HeaderName {
+    #[inline]
+    fn eq(&self, other: &HdrName<'a>) -> bool {
+        match &self.inner {
+            Repr::Standard(la, lb) => match (lb, other.original) {
+                (Some(lb), Some(rb)) => lb.as_bytes() == rb,
+                (None, None) => match &other.inner {
+                    Repr::Standard(ra, _) => la == ra,
+                    _ => false,
+                },
+                _ => false,
+            },
+            Repr::Custom(Custom(ref la), lb) => match (lb, other.original) {
+                (Some(lb), Some(rb)) => lb.as_bytes() == rb,
+                (None, None) => match other.inner {
+                    Repr::Custom(ref ra, _) => {
+                        if ra.lower {
+                            la.as_bytes() == ra.buf
+                        } else {
+                            eq_ignore_ascii_case(la.as_bytes(), ra.buf)
+                        }
+                    }
+                    _ => false,
+                },
                 _ => false,
             },
         }

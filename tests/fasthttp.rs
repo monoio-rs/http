@@ -119,7 +119,7 @@ mod fasthttp_tests {
         header_map.remove(HeaderName::from_bytes("content-type".as_bytes()).unwrap());
         assert_eq!(header_map.len(), 0);
         assert_eq!(header_map.get("content-type"), None);
-        let mut header_map  = HeaderMap::new();
+        let mut header_map = HeaderMap::new();
         header_map.insert(
             HeaderName::from_bytes("content-type".as_bytes()).unwrap(),
             HeaderValue::from_static("application/json"),
@@ -161,7 +161,7 @@ mod fasthttp_tests {
         header_map.remove_all(HeaderName::from_bytes("content-type".as_bytes()).unwrap());
         assert_eq!(header_map.len(), 0);
         assert_eq!(header_map.get("content-type"), None);
-        let mut header_map  = HeaderMap::new();
+        let mut header_map = HeaderMap::new();
         header_map.insert(
             HeaderName::from_bytes("content-type".as_bytes()).unwrap(),
             HeaderValue::from_static("application/json"),
@@ -198,7 +198,10 @@ mod fasthttp_tests {
             .unwrap();
 
         assert_eq!(request.headers().get("content-type").unwrap(), "text/plain");
-        assert_eq!(request.headers().get("Content-Type").unwrap(), "application/json");
+        assert_eq!(
+            request.headers().get("Content-Type").unwrap(),
+            "application/json"
+        );
         let mut header_value_iter = request.headers().get_all("Content-Type").iter();
         let header_value = header_value_iter.next().unwrap();
         assert_eq!(header_value.to_str().unwrap(), "application/json");

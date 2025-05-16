@@ -8,7 +8,7 @@ lazy_static::lazy_static! {
         let mut a = [0u8; 256];
         for i in 0..256 {
             let mut c = i as u8;
-            if (b'A'..=b'Z').contains(&c){
+            if c.is_ascii_uppercase(){
                 c += TO_LOWER;
             }
             a[i] = c;
@@ -20,7 +20,7 @@ lazy_static::lazy_static! {
         let mut a = [0u8; 256];
         for i in 0..256 {
             let mut c = i as u8;
-            if (b'a'..=b'z').contains(&c){
+             if c.is_ascii_lowercase(){
                 c -= TO_LOWER;
             }
             a[i] = c;
@@ -82,7 +82,9 @@ where
 #[allow(dead_code)]
 #[cfg(test)]
 mod tests {
-    use crate::ext::fasthttp::header_name::{normalize_header_key_for_std_header, normalize_header_key};
+    use crate::ext::fasthttp::header_name::{
+        normalize_header_key, normalize_header_key_for_std_header,
+    };
     use crate::HeaderName;
     use std::str::FromStr;
 

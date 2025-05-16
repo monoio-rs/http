@@ -463,16 +463,13 @@ impl HeaderMap {
 }
 
 impl<T> HeaderMap<T> {
-    ///
-    ///
     #[cfg(feature = "fasthttp")]
     fn append_to_mapped_keys(&mut self, original_key: HeaderName) {
         let normalized_key = normalize_header_key(&original_key).into();
         match self.mapped_keys.get_mut(&normalized_key) {
             Some(original_keys) => original_keys.push(original_key),
             None => {
-                let mut original_keys = Vec::new();
-                original_keys.push(original_key.clone());
+                let original_keys = vec![original_key.clone()];
                 self.mapped_keys.insert(normalized_key, original_keys);
             }
         }
@@ -1572,25 +1569,24 @@ impl<T> HeaderMap<T> {
             return None;
         }
 
-        self.find2(key).or({
-            #[cfg(feature = "fasthttp")]
-            {
-                match self.mapped_keys.get(&normalize_header_key(key).into()) {
-                    Some(original_keys) => {
-                        for original_key in original_keys {
-                            if original_key != key {
-                                return self.find2::<HeaderName>(original_key);
-                            }
+        #[cfg(feature = "fasthttp")]
+        match self.find2(key) {
+            x @ Some(_) => x,
+            None => match self.mapped_keys.get(&normalize_header_key(key).into()) {
+                Some(original_keys) => {
+                    for original_key in original_keys {
+                        if original_key != key {
+                            return self.find2::<HeaderName>(original_key);
                         }
-                        None
                     }
-                    None => None,
+                    None
                 }
-            }
+                None => None,
+            },
+        }
 
-            #[cfg(not(feature = "fasthttp"))]
-            None
-        })
+        #[cfg(not(feature = "fasthttp"))]
+        self.find2(key)
     }
 
     #[inline]
@@ -1715,7 +1711,7 @@ impl<T> HeaderMap<T> {
                             return_original_key.clone()
                         } else {
                             let mut is_found = false;
-                            for original_key in original_keys.into_iter() {
+                            for original_key in original_keys.iter() {
                                 i -= 1;
                                 return_original_key = original_key;
                                 if original_key == header_name {
@@ -1744,11 +1740,9 @@ impl<T> HeaderMap<T> {
 
                     let entry = self.remove_found(probe, idx);
 
-                    self.mapped_keys
-                        .get_mut(&normalized_key)
-                        .map(|original_keys| {
-                            original_keys.remove(i);
-                        });
+                    if let Some(original_keys) = self.mapped_keys.get_mut(&normalized_key) {
+                        original_keys.remove(i);
+                    }
                     Some(entry.value)
                 }
                 None => None,
@@ -1926,7 +1920,7 @@ impl<T> HeaderMap<T> {
             return Err(MaxSizeReached::new());
         }
 
-        let normalized_key = normalize_header_key_for_std_header(&(key.clone()), false).into();
+        let normalized_key = normalize_header_key_for_std_header(&(key.clone()), false);
         match normalized_key {
             HOST | CONTENT_TYPE | USER_AGENT | COOKIE | CONTENT_LENGTH | CONNECTION
             | TRANSFER_ENCODING => {
