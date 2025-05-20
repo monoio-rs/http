@@ -3,9 +3,7 @@ pub use self::into_header_name::IntoHeaderName;
 use super::name::{HdrName, HeaderName, InvalidHeaderName};
 use super::HeaderValue;
 #[cfg(feature = "fasthttp")]
-use super::{
-    CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HOST, TRANSFER_ENCODING, USER_AGENT,
-};
+use crate::ext::fasthttp::consts::is_non_append_standard_headers;
 #[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::header_name::{
     normalize_header_key, normalize_header_key_for_std_header,
@@ -1380,6 +1378,63 @@ impl<T> HeaderMap<T> {
         ))
     }
 
+    #[cfg(feature = "fasthttp")]
+    fn try_insert2_do(&mut self, key: HeaderName, value: T) -> Result<Option<T>, MaxSizeReached> {
+        self.try_reserve_one()?;
+
+        #[cfg(feature = "fasthttp")]
+        {
+            Ok(insert_phase_one!(
+                self,
+                key,
+                probe,
+                pos,
+                hash,
+                danger,
+                // Vacant
+                {
+                    let _ = danger; // Make lint happy
+                    self.try_insert_entry(hash, key.into(), value)?;
+                    let index = self.entries.len() - 1;
+                    self.indices[probe] = Pos::new(index, hash);
+                    None
+                },
+                // Occupied
+                Some(self.insert_occupied(pos, value)),
+                // Robinhood
+                {
+                    self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                    None
+                }
+            ))
+        }
+
+        #[cfg(not(feature = "fasthttp"))]
+        Ok(insert_phase_one!(
+            self,
+            key,
+            probe,
+            pos,
+            hash,
+            danger,
+            // Vacant
+            {
+                let _ = danger; // Make lint happy
+                let index = self.entries.len();
+                self.try_insert_entry(hash, key.into(), value)?;
+                self.indices[probe] = Pos::new(index, hash);
+                None
+            },
+            // Occupied
+            Some(self.insert_occupied(pos, value)),
+            // Robinhood
+            {
+                self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                None
+            }
+        ))
+    }
+
     /// Set an occupied bucket to the given value
     #[inline]
     fn insert_occupied(&mut self, index: usize, value: T) -> T {
@@ -1494,45 +1549,61 @@ impl<T> HeaderMap<T> {
     fn try_append2<K>(&mut self, key: K, value: T) -> Result<bool, MaxSizeReached>
     where
         K: Hash + Into<HeaderName>,
-        HeaderName: PartialEq<K>,
     {
         self.try_reserve_one()?;
 
+        let header_name = key.into();
+
         #[cfg(feature = "fasthttp")]
         {
-            Ok(insert_phase_one!(
-                self,
-                key,
-                probe,
-                pos,
-                hash,
-                danger,
-                // Vacant
-                {
-                    let _ = danger;
-                    let index = self.entries.len();
-                    self.try_insert_entry_for_append(hash, key.into(), value)?;
-                    self.indices[probe] = Pos::new(index, hash);
-                    false
-                },
-                // Occupied
-                {
-                    append_value(pos, &mut self.entries[pos], &mut self.extra_values, value);
-                    true
-                },
-                // Robinhood
-                {
-                    self.try_insert_phase_two_for_append(key.into(), value, hash, probe, danger)?;
-
-                    false
+            let normalized_header_name = normalize_header_key_for_std_header(&header_name, true);
+            if is_non_append_standard_headers(&normalized_header_name) {
+                match self.try_insert2_do(header_name, value) {
+                    Ok(None) => return Ok(false),
+                    Ok(Some(_)) => return Ok(false),
+                    Err(e) => return Err(e),
                 }
-            ))
+            } else {
+                Ok(insert_phase_one!(
+                    self,
+                    header_name,
+                    probe,
+                    pos,
+                    hash,
+                    danger,
+                    // Vacant
+                    {
+                        let _ = danger;
+                        let index = self.entries.len();
+                        self.try_insert_entry_for_append(hash, header_name, value)?;
+                        self.indices[probe] = Pos::new(index, hash);
+                        false
+                    },
+                    // Occupied
+                    {
+                        append_value(pos, &mut self.entries[pos], &mut self.extra_values, value);
+                        true
+                    },
+                    // Robinhood
+                    {
+                        self.try_insert_phase_two_for_append(
+                            header_name,
+                            value,
+                            hash,
+                            probe,
+                            danger,
+                        )?;
+
+                        false
+                    }
+                ))
+            }
         }
 
         #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
-            key,
+            header_name,
             probe,
             pos,
             hash,
@@ -1541,7 +1612,7 @@ impl<T> HeaderMap<T> {
             {
                 let _ = danger;
                 let index = self.entries.len();
-                self.try_insert_entry(hash, key.into(), value)?;
+                self.try_insert_entry(hash, header_name, value)?;
                 self.indices[probe] = Pos::new(index, hash);
                 false
             },
@@ -1552,7 +1623,7 @@ impl<T> HeaderMap<T> {
             },
             // Robinhood
             {
-                self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                self.try_insert_phase_two(header_name, value, hash, probe, danger)?;
 
                 false
             }
@@ -1699,40 +1770,7 @@ impl<T> HeaderMap<T> {
 
             let normalized_key = normalize_header_key(&header_name).into();
 
-            let mut i;
-            let original_key = match self.mapped_keys.get(&normalized_key) {
-                Some(original_keys) => match original_keys.iter().next_back() {
-                    Some(return_original_key) => {
-                        i = original_keys.len() - 1;
-                        let mut return_original_key = return_original_key;
-                        let _a = return_original_key.clone().as_raw_str();
-                        let _b = header_name.clone().as_raw_str();
-                        if return_original_key == header_name {
-                            return_original_key.clone()
-                        } else {
-                            let mut is_found = false;
-                            for original_key in original_keys.iter() {
-                                i -= 1;
-                                return_original_key = original_key;
-                                if original_key == header_name {
-                                    is_found = true;
-                                    break;
-                                }
-                            }
-                            if !is_found {
-                                return None;
-                            }
-                            return_original_key.clone()
-                        }
-                    }
-                    None => return None,
-                },
-                None => {
-                    return None;
-                }
-            };
-
-            match original_key.find(self) {
+            match header_name.find(self) {
                 Some((probe, idx)) => {
                     if let Some(links) = self.entries[idx].links {
                         self.remove_all_extra_values(links.next);
@@ -1741,7 +1779,7 @@ impl<T> HeaderMap<T> {
                     let entry = self.remove_found(probe, idx);
 
                     if let Some(original_keys) = self.mapped_keys.get_mut(&normalized_key) {
-                        original_keys.remove(i);
+                        original_keys.retain(|x| x != &header_name);
                     }
                     Some(entry.value)
                 }
@@ -1918,16 +1956,6 @@ impl<T> HeaderMap<T> {
     ) -> Result<(), MaxSizeReached> {
         if self.entries.len() >= MAX_SIZE {
             return Err(MaxSizeReached::new());
-        }
-
-        let normalized_key = normalize_header_key_for_std_header(&(key.clone()), false);
-        match normalized_key {
-            HOST | CONTENT_TYPE | USER_AGENT | COOKIE | CONTENT_LENGTH | CONNECTION
-            | TRANSFER_ENCODING => {
-                // 清理掉所有的 insensitive key
-                self.remove_key_insensitively(&key);
-            }
-            _ => {}
         }
 
         self.append_to_mapped_keys(key.clone());

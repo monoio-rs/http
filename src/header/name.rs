@@ -85,7 +85,7 @@ impl<T: PartialEq> PartialEq for Repr<T> {
             (Self::Custom(la, lb), Self::Custom(ra, rb)) => match (lb, rb) {
                 (Some(lb), Some(rb)) => lb == rb,
                 (None, None) => la == ra,
-                _ => la == ra,
+                _ => false,
             },
             _ => false,
         }

@@ -1,4 +1,4 @@
-use crate::ext::fasthttp::consts::STANDARD_HEADERS;
+use crate::ext::fasthttp::consts::is_standard_header;
 use crate::HeaderName;
 
 const TO_LOWER: u8 = b'a' - b'A';
@@ -30,6 +30,7 @@ lazy_static::lazy_static! {
 }
 
 /// 只normalize标准header，其他自定义header保持原样透传
+#[allow(warnings)]
 pub(crate) fn normalize_header_key_for_std_header(
     header_name: &HeaderName,
     disable_normalizing: bool,
@@ -38,7 +39,7 @@ pub(crate) fn normalize_header_key_for_std_header(
         return header_name.clone();
     }
 
-    if !STANDARD_HEADERS.is_std_header(&(header_name.clone())) {
+    if !is_standard_header(&(header_name.clone())) {
         return header_name.clone();
     }
 

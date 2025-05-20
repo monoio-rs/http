@@ -50,14 +50,51 @@ impl StandardHeaders {
         StandardHeaders(trie)
     }
 
-    pub fn is_std_header(&self, header_name: &HeaderName) -> bool {
+    pub fn is_match(&self, header_name: &HeaderName) -> bool {
+        let lowercase_header = header_name.as_str().to_ascii_lowercase();
+        self.0.exact_match(lowercase_header)
+    }
+}
+
+pub(crate) struct NonAppendStandardHeaders(Trie<u8>);
+
+impl NonAppendStandardHeaders {
+    fn new() -> NonAppendStandardHeaders {
+        let mut builder = TrieBuilder::new();
+
+        // 不可有多个值的特殊 std header
+        // 调用 append 等同于 insert
+        builder.push(CONTENT_TYPE);
+        builder.push(SERVER);
+        builder.push(SET_COOKIE);
+        builder.push(CONTENT_LENGTH);
+        builder.push(CONNECTION);
+        builder.push(TRANSFER_ENCODING);
+        builder.push(DATE);
+
+        let trie = builder.build();
+
+        NonAppendStandardHeaders(trie)
+    }
+
+    pub fn is_match(&self, header_name: &HeaderName) -> bool {
         let lowercase_header = header_name.as_str().to_ascii_lowercase();
         self.0.exact_match(lowercase_header)
     }
 }
 
 lazy_static! {
-    pub(crate) static ref STANDARD_HEADERS: StandardHeaders = StandardHeaders::new();
+    pub(super) static ref STANDARD_HEADERS: StandardHeaders = StandardHeaders::new();
+    pub(super) static ref NON_APPEND_STANDARD_HEADERS: NonAppendStandardHeaders =
+        NonAppendStandardHeaders::new();
+}
+
+pub fn is_standard_header(header_name: &HeaderName) -> bool {
+    STANDARD_HEADERS.is_match(header_name)
+}
+
+pub fn is_non_append_standard_headers(header_name: &HeaderName) -> bool {
+    NON_APPEND_STANDARD_HEADERS.is_match(header_name)
 }
 
 #[test]
