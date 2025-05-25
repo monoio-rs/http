@@ -4,7 +4,7 @@ use bytes::{Bytes, BytesMut};
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::error::Error;
-use std::fmt;
+use std::{fmt};
 use std::hash::{Hash, Hasher};
 use std::marker::StructuralPartialEq;
 use std::mem::MaybeUninit;

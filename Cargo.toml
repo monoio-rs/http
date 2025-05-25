@@ -44,6 +44,7 @@ fnv = "1.0.5"
 itoa = "1"
 trie-rs = "0.4.2"
 lazy_static = "1.5"
+smallvec = { version = "1.15.0", features = ["specialization"]}
 
 [dev-dependencies]
 quickcheck = "1"

@@ -1,3 +1,4 @@
+//! normalization for fasthttp
 use crate::ext::fasthttp::consts::is_standard_header;
 use crate::HeaderName;
 

@@ -1,3 +1,4 @@
+//! consts for fasthttp
 use crate::header::{
     ACCEPT_ENCODING, ACCEPT_LANGUAGE, ACCEPT_RANGES, AUTHORIZATION, CONNECTION, CONTENT_ENCODING,
     CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, COOKIE, DATE, HOST, IF_MODIFIED_SINCE,
@@ -64,9 +65,6 @@ impl NonAppendStandardHeaders {
 
         // 不可有多个值的特殊 std header
         // 调用 append 等同于 insert
-        builder.push(CONTENT_TYPE);
-        builder.push(SERVER);
-        builder.push(SET_COOKIE);
         builder.push(CONTENT_LENGTH);
         builder.push(CONNECTION);
         builder.push(TRANSFER_ENCODING);
@@ -83,27 +81,58 @@ impl NonAppendStandardHeaders {
     }
 }
 
+pub(crate) struct NonDuplicateHeaders(Trie<u8>);
+
+impl NonDuplicateHeaders {
+    fn new() -> NonDuplicateHeaders {
+        let mut builder = TrieBuilder::new();
+
+        // 不可有重名的特殊 std header(大小写不敏感下只能存在一个)
+        builder.push(CONTENT_TYPE);
+        builder.push(SERVER);
+        builder.push(SET_COOKIE);
+        builder.push(CONTENT_LENGTH);
+        builder.push(CONNECTION);
+        builder.push(TRANSFER_ENCODING);
+        builder.push(DATE);
+
+        let trie = builder.build();
+
+        NonDuplicateHeaders(trie)
+    }
+
+    pub fn is_match(&self, header_name: &HeaderName) -> bool {
+        let lowercase_header = header_name.as_str().to_ascii_lowercase();
+        self.0.exact_match(lowercase_header)
+    }
+}
+
 lazy_static! {
     pub(super) static ref STANDARD_HEADERS: StandardHeaders = StandardHeaders::new();
     pub(super) static ref NON_APPEND_STANDARD_HEADERS: NonAppendStandardHeaders =
         NonAppendStandardHeaders::new();
+    pub(super) static ref NON_DUPLICATE_HEADERS: NonDuplicateHeaders = NonDuplicateHeaders::new();
 }
 
+/// check if is standard header
 pub fn is_standard_header(header_name: &HeaderName) -> bool {
     STANDARD_HEADERS.is_match(header_name)
 }
 
-pub fn is_non_append_standard_headers(header_name: &HeaderName) -> bool {
+/// check if is non-append standard header
+pub fn is_non_append_standard_header(header_name: &HeaderName) -> bool {
     NON_APPEND_STANDARD_HEADERS.is_match(header_name)
+}
+
+/// check if is non-duplicate header
+pub fn is_non_duplicate_header(header_name: &HeaderName) -> bool {
+    NON_DUPLICATE_HEADERS.is_match(header_name)
 }
 
 #[test]
 fn test_is_std_header() {
-    assert!(STANDARD_HEADERS.is_std_header(&"Content-Type".parse().unwrap()));
-    assert!(STANDARD_HEADERS.is_std_header(&"content-type".parse().unwrap()));
-    assert!(STANDARD_HEADERS.is_std_header(&"CONTENT-TYPE".parse().unwrap()));
-    assert_eq!(
-        STANDARD_HEADERS.is_std_header(&"content_type".parse().unwrap()),
-        false
-    );
+    assert!(is_standard_header(&"Content-Type".parse().unwrap()));
+    assert!(is_standard_header(&"content-type".parse().unwrap()));
+    assert!(is_standard_header(&"CONTENT-TYPE".parse().unwrap()));
+    assert_eq!(is_standard_header(&"content_type".parse().unwrap()), false);
 }

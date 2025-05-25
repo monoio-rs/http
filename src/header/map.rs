@@ -3,14 +3,15 @@ pub use self::into_header_name::IntoHeaderName;
 use super::name::{HdrName, HeaderName, InvalidHeaderName};
 use super::HeaderValue;
 #[cfg(feature = "fasthttp")]
-use crate::ext::fasthttp::consts::is_non_append_standard_headers;
+use crate::ext::fasthttp::consts::is_non_append_standard_header;
+use crate::ext::fasthttp::consts::is_non_duplicate_header;
 #[cfg(feature = "fasthttp")]
-use crate::ext::fasthttp::header_name::{
-    normalize_header_key, normalize_header_key_for_std_header,
-};
+use crate::ext::fasthttp::header_name::normalize_header_key;
 #[cfg(feature = "fasthttp")]
 use crate::header::map::as_header_name::Sealed;
 use crate::Error;
+#[cfg(feature = "fasthttp")]
+use smallvec::{smallvec, SmallVec};
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -58,7 +59,7 @@ pub struct HeaderMap<T = HeaderValue> {
     danger: Danger,
 
     #[cfg(feature = "fasthttp")]
-    mapped_keys: HashMap<HeaderName, Vec<HeaderName>>, // normalized_key -> original_keys
+    mapped_keys: HashMap<HeaderName, SmallVec<[HeaderName; 4]>>, // normalized_key -> original_keys
 }
 
 // # Implementation notes
@@ -467,29 +468,36 @@ impl<T> HeaderMap<T> {
         match self.mapped_keys.get_mut(&normalized_key) {
             Some(original_keys) => original_keys.push(original_key),
             None => {
-                let original_keys = vec![original_key.clone()];
+                let original_keys = smallvec![original_key.clone()];
                 self.mapped_keys.insert(normalized_key, original_keys);
             }
         }
     }
 
     #[cfg(feature = "fasthttp")]
-    fn remove_key_insensitively(&mut self, original_key: &HeaderName) {
+    fn remove_all_keys_insensitively(&mut self, original_key: &HeaderName) {
         let normalized_key = normalize_header_key(&original_key).into();
 
-        let mut keys = Vec::new();
-
-        if let Some(original_keys) = self.mapped_keys.get(&normalized_key) {
+        if let Some(original_keys) = self.mapped_keys.remove(&normalized_key) {
             for key in original_keys {
-                keys.push(key.clone());
+                self.remove(key);
             }
         }
+    }
 
-        for key in keys {
-            self.remove(key);
+    #[cfg(feature = "fasthttp")]
+    fn remove_other_keys_insensitively(&mut self, original_key: &HeaderName) {
+        let normalized_key = normalize_header_key(&original_key).into();
+
+        if let Some(original_keys) = self.mapped_keys.remove(&normalized_key) {
+            for key in original_keys {
+                if key != original_key {
+                    self.remove(key);
+                }
+            }
+            let keys = smallvec![original_key.clone()];
+            self.mapped_keys.insert(normalized_key, keys);
         }
-
-        self.mapped_keys.remove(&normalized_key);
     }
 
     /// Create an empty `HeaderMap` with the specified capacity.
@@ -1343,7 +1351,7 @@ impl<T> HeaderMap<T> {
                     None
                 },
                 // Occupied
-                Some(self.insert_occupied(pos, value)),
+                Some(self.insert_occupied2(key.into(), pos, value)),
                 // Robinhood
                 {
                     self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
@@ -1441,6 +1449,19 @@ impl<T> HeaderMap<T> {
         if let Some(links) = self.entries[index].links {
             self.remove_all_extra_values(links.next);
         }
+
+        let entry = &mut self.entries[index];
+        mem::replace(&mut entry.value, value)
+    }
+
+    #[cfg(feature = "fasthttp")]
+    #[inline]
+    fn insert_occupied2(&mut self, key: HeaderName, index: usize, value: T) -> T {
+        if let Some(links) = self.entries[index].links {
+            self.remove_all_extra_values(links.next);
+        }
+
+        self.remove_other_keys_insensitively(&key);
 
         let entry = &mut self.entries[index];
         mem::replace(&mut entry.value, value)
@@ -1556,8 +1577,7 @@ impl<T> HeaderMap<T> {
 
         #[cfg(feature = "fasthttp")]
         {
-            let normalized_header_name = normalize_header_key_for_std_header(&header_name, true);
-            if is_non_append_standard_headers(&normalized_header_name) {
+            if is_non_append_standard_header(&header_name) {
                 match self.try_insert2_do(header_name, value) {
                     Ok(None) => return Ok(false),
                     Ok(Some(_)) => return Ok(false),
@@ -1819,7 +1839,7 @@ impl<T> HeaderMap<T> {
 
         let mut return_headers = vec![];
 
-        let original_keys = match self.mapped_keys.get(&normalized_key) {
+        let original_keys = match self.mapped_keys.remove(&normalized_key) {
             Some(original_keys) => original_keys.clone(),
             None => {
                 return None;
@@ -1932,7 +1952,7 @@ impl<T> HeaderMap<T> {
 
         #[cfg(feature = "fasthttp")]
         {
-            self.remove_key_insensitively(&key);
+            self.remove_all_keys_insensitively(&key);
             self.append_to_mapped_keys(key.clone());
         }
 
@@ -1958,6 +1978,9 @@ impl<T> HeaderMap<T> {
             return Err(MaxSizeReached::new());
         }
 
+        if is_non_duplicate_header(&key) {
+            self.remove_all_keys_insensitively(&key);
+        }
         self.append_to_mapped_keys(key.clone());
 
         self.entries.push(Bucket {
