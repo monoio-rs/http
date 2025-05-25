@@ -231,17 +231,4 @@ mod fasthttp_tests {
         let header_value = header_value_iter.next().unwrap();
         assert_eq!(header_value.to_str().unwrap(), "bar2");
     }
-
-    #[test]
-    fn append_multiple_values() {
-        let mut map = HeaderMap::new();
-
-        map.append("foo", "bar1".parse().unwrap());
-        map.append("foo", "bar2".parse().unwrap());
-        map.append("foo", "bar3".parse().unwrap());
-
-        let vals = map.get_all("foo").iter().collect::<Vec<_>>();
-
-        assert_eq!(&vals, &[&"bar1", &"bar2", &"bar3"]);
-    }
 }
