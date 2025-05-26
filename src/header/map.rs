@@ -4,6 +4,7 @@ use super::name::{HdrName, HeaderName, InvalidHeaderName};
 use super::HeaderValue;
 #[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::consts::is_non_append_standard_header;
+#[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::consts::is_non_duplicate_header;
 #[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::header_name::normalize_header_key;
