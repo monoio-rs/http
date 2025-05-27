@@ -9,7 +9,7 @@ use rand::{Rng, SeedableRng};
 #[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::consts::is_non_append_header;
 #[cfg(feature = "fasthttp")]
-use http::ext::fasthttp::consts::is_non_duplicate_header;
+use http::ext::fasthttp::consts::is_standard_header;
 use std::collections::HashMap;
 
 #[cfg(not(miri))]
@@ -200,9 +200,7 @@ impl AltMap {
                     let mut header_name = gen_header_name(rng);
 
                     loop {
-                        if is_non_append_header(&header_name)
-                            || is_non_duplicate_header(&header_name)
-                        {
+                        if is_non_append_header(&header_name) || is_standard_header(&header_name) {
                             header_name = gen_header_name(rng);
                         } else {
                             break;
@@ -220,7 +218,7 @@ impl AltMap {
                 let mut header_name = gen_header_name(rng);
 
                 loop {
-                    if is_non_append_header(&header_name) || is_non_duplicate_header(&header_name) {
+                    if is_non_append_header(&header_name) || is_standard_header(&header_name) {
                         header_name = gen_header_name(rng);
                     } else {
                         break;

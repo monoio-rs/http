@@ -7,40 +7,34 @@ mod fasthttp_tests {
         let mut header_map = HeaderMap::new();
 
         header_map.insert(
-            HeaderName::from_bytes("content-type".as_bytes()).unwrap(),
-            HeaderValue::from_static("application/json"),
+            HeaderName::from_bytes("foo".as_bytes()).unwrap(),
+            HeaderValue::from_static("bar1"),
         );
         assert_eq!(header_map.len(), 1);
-        assert_eq!(header_map.get("content-type").unwrap(), "application/json");
-        assert_eq!(header_map.get("Content-Type").unwrap(), "application/json");
+        assert_eq!(header_map.get("foo").unwrap(), "bar1");
+        assert_eq!(header_map.get("Foo").unwrap(), "bar1");
 
         header_map.insert(
-            HeaderName::from_bytes("Content-Type".as_bytes()).unwrap(),
-            HeaderValue::from_static("text/html"),
+            HeaderName::from_bytes("Foo".as_bytes()).unwrap(),
+            HeaderValue::from_static("bar2"),
         );
         assert_eq!(header_map.len(), 1);
-        assert_eq!(header_map.get("Content-Type").unwrap(), "text/html");
-        assert_eq!(header_map.get("Content-Type").unwrap(), "text/html");
+        assert_eq!(header_map.get("foo").unwrap(), "bar2");
+        assert_eq!(header_map.get("Foo").unwrap(), "bar2");
 
         header_map.insert(
-            HeaderName::from_bytes("content-length".as_bytes()).unwrap(),
-            HeaderValue::from_static("-1"),
+            HeaderName::from_bytes("foo1".as_bytes()).unwrap(),
+            HeaderValue::from_static("bar1"),
         );
         assert_eq!(header_map.len(), 2);
 
         let mut iter = header_map.iter();
 
         let (k, v) = iter.next().unwrap();
-        assert_eq!(
-            (k.as_raw_str(), v.to_str().unwrap()),
-            ("Content-Type", "text/html")
-        );
+        assert_eq!((k.as_raw_str(), v.to_str().unwrap()), ("Foo", "bar2"));
 
         let (k, v) = iter.next().unwrap();
-        assert_eq!(
-            (k.as_raw_str(), v.to_str().unwrap()),
-            ("content-length", "-1")
-        );
+        assert_eq!((k.as_raw_str(), v.to_str().unwrap()), ("foo1", "bar1"));
     }
 
     // tes append for non-std headers
@@ -129,7 +123,7 @@ mod fasthttp_tests {
     }
 
     #[test]
-    fn test_append_for_non_duplicate_header() {
+    fn test_append_for_std_header() {
         let mut header_map = HeaderMap::new();
 
         header_map.append(
@@ -144,9 +138,18 @@ mod fasthttp_tests {
             HeaderName::from_bytes("Content-Type".as_bytes()).unwrap(),
             HeaderValue::from_static("text/html"),
         );
-        assert_eq!(header_map.len(), 1);
-        assert_eq!(header_map.get("content-type").unwrap(), "text/html");
-        assert_eq!(header_map.get("Content-Type").unwrap(), "text/html");
+        assert_eq!(header_map.len(), 2);
+        let mut iter = header_map.iter();
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("Content-Type", "application/json")
+        );
+        let (k, v) = iter.next().unwrap();
+        assert_eq!(
+            (k.as_raw_str(), v.to_str().unwrap()),
+            ("Content-Type", "text/html")
+        );
     }
 
     #[test]

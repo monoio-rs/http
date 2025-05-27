@@ -5,9 +5,9 @@ use super::HeaderValue;
 #[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::consts::is_non_append_header;
 #[cfg(feature = "fasthttp")]
-use crate::ext::fasthttp::consts::is_non_duplicate_header;
-#[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::header_name::normalize_header_key;
+#[cfg(feature = "fasthttp")]
+use crate::ext::fasthttp::header_name::normalize_header_key_for_std_header;
 #[cfg(feature = "fasthttp")]
 use crate::header::map::as_header_name::Sealed;
 use crate::Error;
@@ -465,7 +465,7 @@ impl HeaderMap {
 impl<T> HeaderMap<T> {
     #[cfg(feature = "fasthttp")]
     fn append_to_mapped_keys(&mut self, original_key: HeaderName) {
-        let normalized_key = normalize_header_key(&original_key).into();
+        let normalized_key = normalize_header_key(original_key.clone()).into();
         match self.mapped_keys.get_mut(&normalized_key) {
             Some(original_keys) => original_keys.push(original_key),
             None => {
@@ -477,8 +477,7 @@ impl<T> HeaderMap<T> {
 
     #[cfg(feature = "fasthttp")]
     fn remove_all_keys_insensitively(&mut self, original_key: &HeaderName) {
-        let normalized_key = normalize_header_key(&original_key).into();
-
+        let normalized_key = normalize_header_key(original_key.clone()).into();
         if let Some(original_keys) = self.mapped_keys.remove(&normalized_key) {
             for key in original_keys {
                 self.remove(key);
@@ -488,8 +487,7 @@ impl<T> HeaderMap<T> {
 
     #[cfg(feature = "fasthttp")]
     fn remove_other_keys_insensitively(&mut self, original_key: &HeaderName) {
-        let normalized_key = normalize_header_key(&original_key).into();
-
+        let normalized_key = normalize_header_key(original_key.clone()).into();
         if let Some(original_keys) = self.mapped_keys.remove(&normalized_key) {
             for key in original_keys {
                 if key != original_key {
@@ -1216,14 +1214,49 @@ impl<T> HeaderMap<T> {
     fn try_entry2<K>(&mut self, key: K) -> Result<Entry<'_, T>, MaxSizeReached>
     where
         K: Hash + Into<HeaderName>,
-        HeaderName: PartialEq<K>,
     {
         // Ensure that there is space in the map
         self.try_reserve_one()?;
 
+        let header_name = key.into();
+
+        #[cfg(feature = "fasthttp")]
+        {
+            let normalized_header_key = normalize_header_key_for_std_header(header_name);
+
+            Ok(insert_phase_one!(
+                self,
+                normalized_header_key,
+                probe,
+                pos,
+                hash,
+                danger,
+                Entry::Vacant(VacantEntry {
+                    map: self,
+                    hash,
+                    key: normalized_header_key,
+                    probe,
+                    danger,
+                }),
+                Entry::Occupied(OccupiedEntry {
+                    map: self,
+                    index: pos,
+                    probe,
+                }),
+                Entry::Vacant(VacantEntry {
+                    map: self,
+                    hash,
+                    key: normalized_header_key,
+                    probe,
+                    danger,
+                })
+            ))
+        }
+
+        #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
-            key,
+            header_name,
             probe,
             pos,
             hash,
@@ -1231,7 +1264,7 @@ impl<T> HeaderMap<T> {
             Entry::Vacant(VacantEntry {
                 map: self,
                 hash,
-                key: key.into(),
+                key: header_name,
                 probe,
                 danger,
             }),
@@ -1243,7 +1276,7 @@ impl<T> HeaderMap<T> {
             Entry::Vacant(VacantEntry {
                 map: self,
                 hash,
-                key: key.into(),
+                key: header_name,
                 probe,
                 danger,
             })
@@ -1330,15 +1363,17 @@ impl<T> HeaderMap<T> {
     fn try_insert2<K>(&mut self, key: K, value: T) -> Result<Option<T>, MaxSizeReached>
     where
         K: Hash + Into<HeaderName>,
-        HeaderName: PartialEq<K>,
     {
         self.try_reserve_one()?;
 
+        let header_name = key.into();
+
         #[cfg(feature = "fasthttp")]
         {
+            let normalized_header_name = normalize_header_key_for_std_header(header_name);
             Ok(insert_phase_one!(
                 self,
-                key,
+                normalized_header_name,
                 probe,
                 pos,
                 hash,
@@ -1346,16 +1381,16 @@ impl<T> HeaderMap<T> {
                 // Vacant
                 {
                     let _ = danger; // Make lint happy
-                    self.try_insert_entry(hash, key.into(), value)?;
+                    self.try_insert_entry(hash, normalized_header_name, value)?;
                     let index = self.entries.len() - 1;
                     self.indices[probe] = Pos::new(index, hash);
                     None
                 },
                 // Occupied
-                Some(self.insert_occupied2(key.into(), pos, value)),
+                Some(self.insert_occupied2(normalized_header_name, pos, value)),
                 // Robinhood
                 {
-                    self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                    self.try_insert_phase_two(normalized_header_name, value, hash, probe, danger)?;
                     None
                 }
             ))
@@ -1364,7 +1399,7 @@ impl<T> HeaderMap<T> {
         #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
-            key,
+            header_name,
             probe,
             pos,
             hash,
@@ -1373,7 +1408,7 @@ impl<T> HeaderMap<T> {
             {
                 let _ = danger; // Make lint happy
                 let index = self.entries.len();
-                self.try_insert_entry(hash, key.into(), value)?;
+                self.try_insert_entry(hash, header_name, value)?;
                 self.indices[probe] = Pos::new(index, hash);
                 None
             },
@@ -1381,7 +1416,7 @@ impl<T> HeaderMap<T> {
             Some(self.insert_occupied(pos, value)),
             // Robinhood
             {
-                self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                self.try_insert_phase_two(header_name, value, hash, probe, danger)?;
                 None
             }
         ))
@@ -1391,37 +1426,11 @@ impl<T> HeaderMap<T> {
     fn try_insert2_do(&mut self, key: HeaderName, value: T) -> Result<Option<T>, MaxSizeReached> {
         self.try_reserve_one()?;
 
-        #[cfg(feature = "fasthttp")]
-        {
-            Ok(insert_phase_one!(
-                self,
-                key,
-                probe,
-                pos,
-                hash,
-                danger,
-                // Vacant
-                {
-                    let _ = danger; // Make lint happy
-                    self.try_insert_entry(hash, key, value)?;
-                    let index = self.entries.len() - 1;
-                    self.indices[probe] = Pos::new(index, hash);
-                    None
-                },
-                // Occupied
-                Some(self.insert_occupied(pos, value)),
-                // Robinhood
-                {
-                    self.try_insert_phase_two(key, value, hash, probe, danger)?;
-                    None
-                }
-            ))
-        }
+        let normalized_header_name = normalize_header_key_for_std_header(key);
 
-        #[cfg(not(feature = "fasthttp"))]
         Ok(insert_phase_one!(
             self,
-            key,
+            normalized_header_name,
             probe,
             pos,
             hash,
@@ -1429,8 +1438,8 @@ impl<T> HeaderMap<T> {
             // Vacant
             {
                 let _ = danger; // Make lint happy
-                let index = self.entries.len();
-                self.try_insert_entry(hash, key.into(), value)?;
+                self.try_insert_entry(hash, normalized_header_name, value)?;
+                let index = self.entries.len() - 1;
                 self.indices[probe] = Pos::new(index, hash);
                 None
             },
@@ -1438,7 +1447,7 @@ impl<T> HeaderMap<T> {
             Some(self.insert_occupied(pos, value)),
             // Robinhood
             {
-                self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                self.try_insert_phase_two(normalized_header_name, value, hash, probe, danger)?;
                 None
             }
         ))
@@ -1585,9 +1594,11 @@ impl<T> HeaderMap<T> {
                     Err(e) => Err(e),
                 }
             } else {
+                let normalized_header_name = normalize_header_key_for_std_header(header_name);
+
                 Ok(insert_phase_one!(
                     self,
-                    header_name,
+                    normalized_header_name,
                     probe,
                     pos,
                     hash,
@@ -1595,8 +1606,8 @@ impl<T> HeaderMap<T> {
                     // Vacant
                     {
                         let _ = danger;
-                        self.try_insert_entry_for_append(hash, header_name, value)?;
-                        let index = self.entries.len() - 1;
+                        let index = self.entries.len();
+                        self.try_insert_entry_for_append(hash, normalized_header_name, value)?;
                         self.indices[probe] = Pos::new(index, hash);
                         false
                     },
@@ -1608,7 +1619,7 @@ impl<T> HeaderMap<T> {
                     // Robinhood
                     {
                         self.try_insert_phase_two_for_append(
-                            header_name,
+                            normalized_header_name,
                             value,
                             hash,
                             probe,
@@ -1662,19 +1673,25 @@ impl<T> HeaderMap<T> {
         }
 
         #[cfg(feature = "fasthttp")]
-        match self.find2(key) {
-            x @ Some(_) => x,
-            None => match self.mapped_keys.get(&normalize_header_key(key).into()) {
-                Some(original_keys) => {
-                    for original_key in original_keys {
-                        if original_key != key {
-                            return self.find2::<HeaderName>(original_key);
+        {
+            let normalized_header_key = normalize_header_key_for_std_header(key.clone().into());
+            match self.find2::<HeaderName>(&normalized_header_key) {
+                x @ Some(_) => x,
+                None => match self
+                    .mapped_keys
+                    .get(&normalize_header_key(normalized_header_key.clone()).into())
+                {
+                    Some(original_keys) => {
+                        for original_key in original_keys {
+                            if original_key != key {
+                                return self.find2::<HeaderName>(original_key);
+                            }
                         }
+                        None
                     }
-                    None
-                }
-                None => None,
-            },
+                    None => None,
+                },
+            }
         }
 
         #[cfg(not(feature = "fasthttp"))]
@@ -1741,8 +1758,8 @@ impl<T> HeaderMap<T> {
         probe: usize,
         danger: bool,
     ) -> Result<usize, MaxSizeReached> {
+        let index = self.entries.len();
         self.try_insert_entry_for_append(hash, key.clone(), value)?;
-        let index = self.entries.len() - 1;
 
         let num_displaced = do_insert_phase_two(&mut self.indices, probe, Pos::new(index, hash));
 
@@ -1785,9 +1802,11 @@ impl<T> HeaderMap<T> {
                 Err(_) => return None,
             };
 
-            let normalized_key = normalize_header_key(&header_name).into();
+            let normalized_header_name = normalize_header_key_for_std_header(header_name);
 
-            match header_name.find(self) {
+            let normalized_key = normalize_header_key(&normalized_header_name).into();
+
+            match normalized_header_name.find(self) {
                 Some((probe, idx)) => {
                     if let Some(links) = self.entries[idx].links {
                         self.remove_all_extra_values(links.next);
@@ -1796,7 +1815,7 @@ impl<T> HeaderMap<T> {
                     let entry = self.remove_found(probe, idx);
 
                     if let Some(original_keys) = self.mapped_keys.get_mut(&normalized_key) {
-                        original_keys.retain(|x| x != &header_name);
+                        original_keys.retain(|x| x != &normalized_header_name);
                     }
                     Some(entry.value)
                 }
@@ -1975,9 +1994,6 @@ impl<T> HeaderMap<T> {
             return Err(MaxSizeReached::new());
         }
 
-        if is_non_duplicate_header(&key) {
-            self.remove_all_keys_insensitively(&key);
-        }
         self.append_to_mapped_keys(key.clone());
 
         self.entries.push(Bucket {

@@ -34,26 +34,19 @@ lazy_static::lazy_static! {
 
 /// 只normalize标准header，其他自定义header保持原样透传
 #[allow(warnings)]
-pub(crate) fn normalize_header_key_for_std_header(
-    header_name: &HeaderName,
-    disable_normalizing: bool,
-) -> HeaderName {
-    if disable_normalizing {
-        return header_name.clone();
+pub(crate) fn normalize_header_key_for_std_header(header_name: HeaderName) -> HeaderName {
+    if !is_standard_header(&header_name) {
+        return header_name;
     }
 
-    if !is_standard_header(&(header_name.clone())) {
-        return header_name.clone();
-    }
-
-    normalize_header_key(&header_name).into()
+    normalize_header_key(header_name).into()
 }
 
-pub(crate) fn normalize_header_key<K>(header_name: &K) -> impl Into<HeaderName>
+pub(crate) fn normalize_header_key<K>(header_name: K) -> impl Into<HeaderName>
 where
-    K: Into<HeaderName> + Clone,
+    K: Into<HeaderName>,
 {
-    let header_name: HeaderName = header_name.clone().into();
+    let header_name: HeaderName = header_name.into();
     let mut header_name_str = header_name.as_raw_str().to_string();
     // let normalized_header_name = header_name.as_str();
     let n = header_name_str.len();
@@ -93,45 +86,45 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn test_normalize_header_key() {
-        let mut header_name = HeaderName::from_str("content-type").unwrap();
+    fn test_normalize_header_key_for_std_header() {
+        let header_name = HeaderName::from_str("content-type").unwrap();
         assert_eq!(
-            normalize_header_key_for_std_header(&mut header_name, false).as_raw_str(),
+            normalize_header_key_for_std_header(header_name).as_raw_str(),
             "Content-Type"
         );
 
-        let mut header_name = HeaderName::from_str("Content-Type").unwrap();
+        let header_name = HeaderName::from_str("Content-Type").unwrap();
         assert_eq!(
-            normalize_header_key_for_std_header(&mut header_name, false).as_raw_str(),
+            normalize_header_key_for_std_header(header_name).as_raw_str(),
             "Content-Type"
         );
 
         // 非标准header，不做处理
-        let mut header_name = HeaderName::from_str("x-tt-agw").unwrap();
+        let header_name = HeaderName::from_str("x-tt-agw").unwrap();
         assert_eq!(
-            normalize_header_key_for_std_header(&mut header_name, false).as_raw_str(),
+            normalize_header_key_for_std_header(header_name).as_raw_str(),
             "x-tt-agw"
         );
     }
 
     #[test]
-    fn test_normalize_header_key2() {
-        let mut header_name = HeaderName::from_str("content-type").unwrap();
+    fn test_normalize_header_key() {
+        let header_name = HeaderName::from_str("content-type").unwrap();
         assert_eq!(
-            normalize_header_key(&mut header_name).into().as_raw_str(),
+            normalize_header_key(header_name).into().as_raw_str(),
             "Content-Type"
         );
 
-        let mut header_name = HeaderName::from_str("Content-Type").unwrap();
+        let header_name = HeaderName::from_str("Content-Type").unwrap();
         assert_eq!(
-            normalize_header_key(&mut header_name).into().as_raw_str(),
+            normalize_header_key(header_name).into().as_raw_str(),
             "Content-Type"
         );
 
         // 非标准header，不做处理
-        let mut header_name = HeaderName::from_str("x-tt-agw").unwrap();
+        let header_name = HeaderName::from_str("x-tt-agw").unwrap();
         assert_eq!(
-            normalize_header_key(&mut header_name).into().as_raw_str(),
+            normalize_header_key(header_name).into().as_raw_str(),
             "X-Tt-Agw"
         );
     }
