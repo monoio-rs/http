@@ -7,6 +7,7 @@ const TO_LOWER: u8 = b'a' - b'A';
 lazy_static::lazy_static! {
     static ref TO_LOWER_TABLE: [u8; 256] = {
         let mut a = [0u8; 256];
+        #[allow(warnings)]
         for i in 0..256 {
             let mut c = i as u8;
             if c.is_ascii_uppercase(){
@@ -19,6 +20,7 @@ lazy_static::lazy_static! {
 
     static ref TO_UPPER_TABLE: [u8; 256] = {
         let mut a = [0u8; 256];
+        #[allow(warnings)]
         for i in 0..256 {
             let mut c = i as u8;
              if c.is_ascii_lowercase(){

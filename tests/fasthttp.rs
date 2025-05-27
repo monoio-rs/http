@@ -97,7 +97,7 @@ mod fasthttp_tests {
     }
 
     #[test]
-    fn test_append_special_std_header() {
+    fn test_append_for_non_append_header() {
         // test append for special std header, should equal to insert
         let mut header_map = HeaderMap::new();
 
@@ -126,6 +126,27 @@ mod fasthttp_tests {
         );
         assert_eq!(header_map.len(), 1);
         assert_eq!(header_map.get("content-length").unwrap(), "4");
+    }
+
+    #[test]
+    fn test_append_for_non_duplicate_header() {
+        let mut header_map = HeaderMap::new();
+
+        header_map.append(
+            HeaderName::from_bytes("content-type".as_bytes()).unwrap(),
+            HeaderValue::from_static("application/json"),
+        );
+        assert_eq!(header_map.len(), 1);
+        assert_eq!(header_map.get("content-type").unwrap(), "application/json");
+        assert_eq!(header_map.get("Content-Type").unwrap(), "application/json");
+
+        header_map.append(
+            HeaderName::from_bytes("Content-Type".as_bytes()).unwrap(),
+            HeaderValue::from_static("text/html"),
+        );
+        assert_eq!(header_map.len(), 1);
+        assert_eq!(header_map.get("content-type").unwrap(), "text/html");
+        assert_eq!(header_map.get("Content-Type").unwrap(), "text/html");
     }
 
     #[test]

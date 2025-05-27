@@ -57,10 +57,10 @@ impl StandardHeaders {
     }
 }
 
-pub(crate) struct NonAppendStandardHeaders(Trie<u8>);
+pub(crate) struct NonAppendHeaders(Trie<u8>);
 
-impl NonAppendStandardHeaders {
-    fn new() -> NonAppendStandardHeaders {
+impl NonAppendHeaders {
+    fn new() -> NonAppendHeaders {
         let mut builder = TrieBuilder::new();
 
         // 不可有多个值的特殊 std header
@@ -72,7 +72,7 @@ impl NonAppendStandardHeaders {
 
         let trie = builder.build();
 
-        NonAppendStandardHeaders(trie)
+        NonAppendHeaders(trie)
     }
 
     pub fn is_match(&self, header_name: &HeaderName) -> bool {
@@ -109,8 +109,7 @@ impl NonDuplicateHeaders {
 
 lazy_static! {
     pub(super) static ref STANDARD_HEADERS: StandardHeaders = StandardHeaders::new();
-    pub(super) static ref NON_APPEND_STANDARD_HEADERS: NonAppendStandardHeaders =
-        NonAppendStandardHeaders::new();
+    pub(super) static ref NON_APPEND_HEADERS: NonAppendHeaders = NonAppendHeaders::new();
     pub(super) static ref NON_DUPLICATE_HEADERS: NonDuplicateHeaders = NonDuplicateHeaders::new();
 }
 
@@ -120,8 +119,8 @@ pub fn is_standard_header(header_name: &HeaderName) -> bool {
 }
 
 /// check if is non-append standard header
-pub fn is_non_append_standard_header(header_name: &HeaderName) -> bool {
-    NON_APPEND_STANDARD_HEADERS.is_match(header_name)
+pub fn is_non_append_header(header_name: &HeaderName) -> bool {
+    NON_APPEND_HEADERS.is_match(header_name)
 }
 
 /// check if is non-duplicate header

@@ -3,7 +3,7 @@ pub use self::into_header_name::IntoHeaderName;
 use super::name::{HdrName, HeaderName, InvalidHeaderName};
 use super::HeaderValue;
 #[cfg(feature = "fasthttp")]
-use crate::ext::fasthttp::consts::is_non_append_standard_header;
+use crate::ext::fasthttp::consts::is_non_append_header;
 #[cfg(feature = "fasthttp")]
 use crate::ext::fasthttp::consts::is_non_duplicate_header;
 #[cfg(feature = "fasthttp")]
@@ -1403,7 +1403,7 @@ impl<T> HeaderMap<T> {
                 // Vacant
                 {
                     let _ = danger; // Make lint happy
-                    self.try_insert_entry(hash, key.into(), value)?;
+                    self.try_insert_entry(hash, key, value)?;
                     let index = self.entries.len() - 1;
                     self.indices[probe] = Pos::new(index, hash);
                     None
@@ -1412,7 +1412,7 @@ impl<T> HeaderMap<T> {
                 Some(self.insert_occupied(pos, value)),
                 // Robinhood
                 {
-                    self.try_insert_phase_two(key.into(), value, hash, probe, danger)?;
+                    self.try_insert_phase_two(key, value, hash, probe, danger)?;
                     None
                 }
             ))
@@ -1578,11 +1578,11 @@ impl<T> HeaderMap<T> {
 
         #[cfg(feature = "fasthttp")]
         {
-            if is_non_append_standard_header(&header_name) {
+            if is_non_append_header(&header_name) {
                 match self.try_insert2_do(header_name, value) {
-                    Ok(None) => return Ok(false),
-                    Ok(Some(_)) => return Ok(false),
-                    Err(e) => return Err(e),
+                    Ok(None) => Ok(false),
+                    Ok(Some(_)) => Ok(false),
+                    Err(e) => Err(e),
                 }
             } else {
                 Ok(insert_phase_one!(
@@ -1595,8 +1595,8 @@ impl<T> HeaderMap<T> {
                     // Vacant
                     {
                         let _ = danger;
-                        let index = self.entries.len();
                         self.try_insert_entry_for_append(hash, header_name, value)?;
+                        let index = self.entries.len() - 1;
                         self.indices[probe] = Pos::new(index, hash);
                         false
                     },
@@ -1718,10 +1718,8 @@ impl<T> HeaderMap<T> {
         probe: usize,
         danger: bool,
     ) -> Result<usize, MaxSizeReached> {
-        // Push the value and get the index
-        let index = self.entries.len();
-
         self.try_insert_entry(hash, key, value)?;
+        let index = self.entries.len() - 1;
 
         let num_displaced = do_insert_phase_two(&mut self.indices, probe, Pos::new(index, hash));
 
@@ -1743,10 +1741,8 @@ impl<T> HeaderMap<T> {
         probe: usize,
         danger: bool,
     ) -> Result<usize, MaxSizeReached> {
-        // Push the value and get the index
-        let index = self.entries.len();
-
         self.try_insert_entry_for_append(hash, key.clone(), value)?;
+        let index = self.entries.len() - 1;
 
         let num_displaced = do_insert_phase_two(&mut self.indices, probe, Pos::new(index, hash));
 
