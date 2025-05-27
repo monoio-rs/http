@@ -10,9 +10,9 @@ documentation = "https://docs.rs/http"
 repository = "https://github.com/hyperium/http"
 license = "MIT OR Apache-2.0"
 authors = [
-  "Alex Crichton <alex@alexcrichton.com>",
-  "Carl Lerche <me@carllerche.com>",
-  "Sean McArthur <sean@seanmonstar.com>",
+    "Alex Crichton <alex@alexcrichton.com>",
+    "Carl Lerche <me@carllerche.com>",
+    "Sean McArthur <sean@seanmonstar.com>",
 ]
 description = """
 A set of types for representing HTTP requests and responses.
@@ -25,22 +25,26 @@ rust-version = "1.49.0"
 
 [workspace]
 members = [
-  ".",
+    ".",
 ]
 exclude = [
-  "fuzz",
-  "benches"
+    "fuzz",
+    "benches"
 ]
 
 [features]
 default = ["std"]
 std = []
 double-write = ["default"]
+fasthttp = ["double-write"] # compatible with fasthttp go version
 
 [dependencies]
 bytes = "1"
 fnv = "1.0.5"
 itoa = "1"
+trie-rs = "0.4.2"
+lazy_static = "1.5"
+smallvec = { version = "1.15.0", features = ["specialization"]}
 
 [dev-dependencies]
 quickcheck = "1"

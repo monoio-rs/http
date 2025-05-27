@@ -180,6 +180,8 @@ pub mod version;
 
 mod byte_str;
 mod error;
+#[cfg(feature = "fasthttp")]
+pub mod ext;
 mod extensions;
 
 pub use crate::error::{Error, Result};
